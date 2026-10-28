@@ -60,6 +60,7 @@ final class DashLink: NSObject, ObservableObject {
     private var lastFrameAt: TimeInterval = -10
     private var lastPreviewAt: TimeInterval = -10
     private var lastMusicPoll: TimeInterval = -10
+    private var lastOneShotAt: TimeInterval = -100
     private var lastBarSent: String?
     private var buttonCount = 0
 
@@ -74,10 +75,27 @@ final class DashLink: NSObject, ObservableObject {
         settings.onProfileChange = { [weak self] in self?.pushProfile() }
     }
 
+    /// Định vị liên tục chỉ khi chỉ đường (chạy nền được), hoặc khi đang xác nhận / mở bản đồ (chỉ khi app ở trước).
+    /// Còn lại tắt hẳn để iPhone không hiện viên thuốc xanh; thời tiết làm mới bằng một lần lấy vị trí.
+    private func updateLocationTracking(_ t: TimeInterval) {
+        let mode: LocationService.Tracking
+        switch navigation.state {
+        case .active, .routing: mode = .background
+        case .resolving, .confirm: mode = .foreground
+        default: mode = ui.mapOpen ? .foreground : .off
+        }
+        location.setTracking(mode)
+        if mode == .off, Date().timeIntervalSince(lastWeatherAt) > 600, t - lastOneShotAt > 60 {
+            lastOneShotAt = t
+            location.requestOnce()
+        }
+    }
+
     /// Tên, lời chào và địa điểm đã lưu → giao diện đồng hồ (màn chào, menu giữ Enter).
     private func pushProfile() {
         ui.userName = settings.userName
         ui.greetingEnabled = settings.greetingEnabled
+        ui.edgeGlow = settings.edgeGlow
         ui.places = settings.places
         dirty = true
     }
@@ -349,6 +367,7 @@ final class DashLink: NSObject, ObservableObject {
 
     private func onTick() {
         let t = now
+        updateLocationTracking(t)
         send(session.tick(now: t).send)
         perform(ui.tick(now: t))
         if photos.tick(now: t) { dirty = true }

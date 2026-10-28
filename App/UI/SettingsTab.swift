@@ -24,6 +24,7 @@ struct SettingsTab: View {
                 PageTitle("Cài đặt")
                 profileGroup
                 greetingGroup
+                effectGroup
                 photoGroup
                 barGroup
                 tripGroup
@@ -90,6 +91,24 @@ struct SettingsTab: View {
                 }
             }
             GroupFoot(settings.greetingEnabled ? "Đồng hồ chào: \(hello)" : "Đang tắt: đồng hồ vào thẳng trang chủ.")
+        }
+    }
+
+    private var effectGroup: some View {
+        VStack(spacing: 0) {
+            GroupTitle("Hiệu ứng")
+            GroupCard {
+                HStack(spacing: 12) {
+                    IconTile(symbol: Sym.sparkles, color: .purple)
+                    Text("Ánh màu viền").font(.system(size: 16)).foregroundColor(Theme.text)
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: $settings.edgeGlow).labelsHidden().tint(Theme.green)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(minHeight: 50)
+            }
+            GroupFoot("Ánh màu rất nhẹ ở mép màn hình đồng hồ, đổi theo trang.")
         }
     }
 

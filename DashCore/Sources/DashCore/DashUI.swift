@@ -46,6 +46,8 @@ public final class DashUI {
     public var userName = ""
     /// Tắt: `showWelcome` bỏ màn chào và vào thẳng Home.
     public var greetingEnabled = true
+    /// Ánh màu nhẹ ở mép khung theo màu trang (bật/tắt trong Cài đặt).
+    public var edgeGlow = true
 
     // Trạng thái
     public private(set) var rotation = 1          // bước bánh xe, không chia dư (để xoay vòng mượt)

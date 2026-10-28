@@ -310,7 +310,7 @@
     tab: "dash", conn: "showing", nav: "idle", veh: "ok", key: "none", theme: "light",
     name: "Trọng", greeting: true, onboarded: true, bt: null,
     odo: 3214.4, trip1Start: 3088.9, trip2Start: 3195.7, oilAt: 2894.4, oilInt: 1500, bar: "odo",
-    source: "auto", interval: 8, range: 7, selDay: 0, histCleared: false, dev: false, vtap: 0, calls: 12, keyMsg: null, keyBusy: false, simNav: false, addTo: null,
+    source: "auto", interval: 8, range: 7, selDay: 0, histCleared: false, dev: false, vtap: 0, calls: 12, glow: true, keyMsg: null, keyBusy: false, simNav: false, addTo: null,
     places: { home: { name: "Nhà", sub: "Quận 7" }, work: { name: "Công ty", sub: "Bitexco, Q.1" }, favs: [{ name: "Cà phê Bờ Hồ", sub: "Q.1" }, { name: "Sân vận động Thống Nhất", sub: "Q.10" }] },
   };
   try { const r = +localStorage.getItem("yalink.range"); if (r === 7 || r === 30) S.range = r; } catch (e) { /* không có bộ nhớ: dùng mặc định */ }
@@ -450,7 +450,7 @@
       </div>
       <div class="group-foot">Dán link Google Maps để lưu. Giữ Enter khi bản đồ đang mở để đi nhanh tới các nơi này.</div>
       <div class="group-title">Vị trí</div>
-      <div class="group">${row("Quyền vị trí", "Luôn luôn", "good", ["shield", "green"])}</div>`;
+      <div class="group">${row("Quyền vị trí", "Khi dùng app", "good", ["shield", "green"])}</div>`;
   }
 
   // ---- Tab Xe ----
@@ -508,7 +508,12 @@
       </div>
       <div class="group-foot">${S.greeting
         ? `Đồng hồ chào: <b>${hello()}${S.name.trim() ? ", " + esc(S.name.trim()) : ""}</b>`
-        : "Đang tắt: đồng hồ vào thẳng trang chủ."}</div>`;
+        : "Đang tắt: đồng hồ vào thẳng trang chủ."}</div>
+      <div class="group-title">Hiệu ứng</div>
+      <div class="group">
+        <div class="row hasico"><span class="lead">${tile("sparkle", "purple")}<span>Ánh màu viền</span></span>${toggle("glow", S.glow)}</div>
+      </div>
+      <div class="group-foot">Ánh màu rất nhẹ ở mép màn hình đồng hồ, đổi theo trang.</div>`;
   }
   function renderSetB() {
     const v = vehicle();
@@ -593,7 +598,7 @@
   const pushBar = () => dash({ barKey: S.bar, barText: barText() });
   function syncDash() {
     pushBar();
-    dash({ nav: S.nav === "active", name: S.name, greeting: S.greeting, places: S.places });
+    dash({ nav: S.nav === "active", name: S.name, greeting: S.greeting, places: S.places, glow: S.glow });
     const v = vehicle();
     if (v) dash({ vehicle: v });
   }
@@ -614,6 +619,7 @@
     if (t.dataset.tab) { S.tab = t.dataset.tab; renderAll(); return; }
     if (t.dataset.btn) { dash({ btn: t.dataset.btn }); return; }
     if (t.dataset.sw === "simnav") { S.simNav = !S.simNav; S.nav = S.simNav ? (S.nav === "idle" ? "active" : S.nav) : "idle"; renderAll(); syncDash(); return; }
+    if (t.dataset.sw === "glow") { S.glow = !S.glow; renderSetA(); dash({ glow: S.glow }); return; }
     if (t.dataset.sw === "greeting") { S.greeting = !S.greeting; renderSetA(); dash({ greeting: S.greeting }); return; }
     if (t.dataset.seg) {
       const k = t.dataset.seg, v = t.dataset.v; S[k] = isNaN(v) ? v : +v;

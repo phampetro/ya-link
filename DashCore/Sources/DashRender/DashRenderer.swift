@@ -76,7 +76,7 @@ public struct DashRenderer {
 
         // Thanh dưới do đồng hồ vẽ (đen ~62 %): tô màu trang vào ảnh ngay dưới nó để thanh ngả màu
         c.fill(CGRect(x: 0, y: 188, width: c.width, height: c.height - 188), pc.cg(0.63))
-        drawGlow(c, pc, alpha: Self.ramp(since, 0.5, 0.8))
+        drawGlow(c, pc, alpha: ui.edgeGlow ? Self.ramp(since, 0.5, 0.8) : 0)
         if !welcome { drawWheel(c, ui, r: r, now: now, since: since) }
         return c.makeImage()
     }
@@ -515,7 +515,7 @@ public struct DashRenderer {
         for i in 0..<steps {
             let k = 1 - Double(i) / Double(steps)
             let inset = CGFloat(i * 2) + 1
-            c.ctx.setStrokeColor(pc.cg(0.42 * k * k * alpha))
+            c.ctx.setStrokeColor(pc.cg(0.15 * k * k * alpha))
             c.ctx.setLineWidth(2)
             c.ctx.stroke(CGRect(x: 0, y: 0, width: c.width, height: c.height).insetBy(dx: inset, dy: inset))
         }

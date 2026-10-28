@@ -47,6 +47,9 @@ final class AppSettings: ObservableObject {
     @Published var greetingEnabled: Bool {
         didSet { defaults.set(greetingEnabled, forKey: "greetingEnabled"); onProfileChange?() }
     }
+    @Published var edgeGlow: Bool {
+        didSet { defaults.set(edgeGlow, forKey: "edgeGlow"); onProfileChange?() }
+    }
     @Published var places: SavedPlaces {
         didSet {
             if let d = try? JSONEncoder().encode(places) { defaults.set(d, forKey: "places") }
@@ -78,6 +81,7 @@ final class AppSettings: ObservableObject {
         googleCalls = 0
         userName = d.string(forKey: "userName") ?? ""
         greetingEnabled = d.object(forKey: "greetingEnabled") as? Bool ?? true
+        edgeGlow = d.object(forKey: "edgeGlow") as? Bool ?? true
         if let data = d.data(forKey: "places"), let p = try? JSONDecoder().decode(SavedPlaces.self, from: data) {
             places = p
         } else {

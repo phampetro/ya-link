@@ -161,7 +161,7 @@ final class NavigationController: ObservableObject {
     private func begin(_ p: Pending) {
         lastPending = p
         guard let loc = lastFix else {
-            state = .failed("Chưa có vị trí GPS. Cho phép vị trí “Luôn luôn” rồi thử lại.")
+            state = .failed("Chưa có vị trí GPS. Cho phép vị trí “Khi dùng app” rồi thử lại.")
             return
         }
         destination = p
