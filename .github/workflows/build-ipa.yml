@@ -8,12 +8,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Vector tests (DashCore) and screen snapshots (DashRender)
+        timeout-minutes: 8
         working-directory: DashCore
         run: swift test 2>&1 | tee test.log; test ${PIPESTATUS[0]} -eq 0
       - name: Snapshot sizes
         if: always()
         working-directory: DashCore
-        run: grep SNAPSHOT test.log || true
+        run: |
+          grep SNAPSHOT test.log || true
+          echo "---- last test lines ----"
+          grep -E "error|failed|Test Case .* started" test.log | tail -25 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
