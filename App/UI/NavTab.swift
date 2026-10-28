@@ -202,16 +202,15 @@ struct NavTab: View {
         return VStack(spacing: 0) {
             GroupCard {
                 Button {
-                    if !ok, let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 } label: {
                     Row("Quyền vị trí", value: text, valueColor: color, bold: true, icon: (Sym.shield, .green))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
-            if !ok {
-                GroupFoot("Cần cho phép vị trí để dẫn đường. Bấm để mở Cài đặt iPhone.")
-            }
+            GroupFoot(ok ? "Bấm để mở Cài đặt iPhone và đổi quyền vị trí."
+                         : "Cần cho phép vị trí để dẫn đường. Bấm để mở Cài đặt iPhone.")
         }
     }
 }
