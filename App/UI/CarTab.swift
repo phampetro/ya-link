@@ -14,11 +14,7 @@ struct CarTab: View {
         ScrollView {
             VStack(spacing: 0) {
                 PageTitle("Xe")
-                if history.history.isEmpty {
-                    emptyState
-                } else {
-                    content
-                }
+                content
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
@@ -29,11 +25,11 @@ struct CarTab: View {
         GroupCard {
             VStack(spacing: 6) {
                 Text("Chưa có lịch sử").font(.system(size: 17, weight: .bold)).foregroundColor(Theme.text)
-                Text("Đi xe và kết nối app, lịch sử theo ngày sẽ hiện ở đây.")
+                Text("Đi xe và kết nối app, từng ngày sẽ hiện ở đây.")
                     .font(.system(size: 15)).foregroundColor(Theme.sec).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 34)
+            .padding(.vertical, 26)
             .padding(.horizontal, 16)
         }
     }
@@ -45,20 +41,25 @@ struct CarTab: View {
         let rows = history.history.rows(range: range)
         let sm = history.history.summary(range: range)
         let sel = rows.indices.contains(selected) ? selected : 0
+        let empty = history.history.isEmpty
         return VStack(spacing: 0) {
-            summaryCard(rows: rows, sm: sm, sel: sel, range: range)
+            summaryCard(rows: rows, sm: sm, sel: sel, range: range, empty: empty)
             GroupFoot("Km/L = tổng km ÷ tổng lít. Ngày không chạy hoặc thiếu xăng không tính.")
             GroupTitle("Theo ngày")
-            GroupCard {
-                ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
-                    if i > 0 { RowSeparator() }
-                    dayRow(r)
+            if empty {
+                emptyState
+            } else {
+                GroupCard {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { i, r in
+                        if i > 0 { RowSeparator() }
+                        dayRow(r)
+                    }
                 }
             }
         }
     }
 
-    private func summaryCard(rows: [DayRow], sm: HistorySummary, sel: Int, range: Int) -> some View {
+    private func summaryCard(rows: [DayRow], sm: HistorySummary, sel: Int, range: Int, empty: Bool) -> some View {
         let rangeBinding = Binding<Int>(get: { settings.historyRange }, set: { settings.historyRange = $0 })
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
@@ -74,14 +75,17 @@ struct CarTab: View {
                 PillSegmented(selection: rangeBinding, options: [(7, "7 ngày"), (30, "30 ngày")])
                     .frame(width: 140)
             }
-            Text("\(Fmt.dec(sm.validKm, 0)) km · \(Fmt.dec(sm.litres)) L · chạy \(sm.ranDays)/\(range) ngày"
+            Text(empty ? "Chưa có dữ liệu"
+                 : "\(Fmt.dec(sm.validKm, 0)) km · \(Fmt.dec(sm.litres)) L · chạy \(sm.ranDays)/\(range) ngày"
                  + (sm.missingDays > 0 ? " · \(sm.missingDays) ngày thiếu xăng" : ""))
                 .font(.system(size: 12.5)).foregroundColor(Theme.sec)
                 .padding(.top, 2)
             chart(rows: rows, sel: sel, range: range)
                 .padding(.top, 14)
-            selectedBox(rows[sel])
-                .padding(.top, 10)
+            if !empty {
+                selectedBox(rows[sel])
+                    .padding(.top, 10)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)

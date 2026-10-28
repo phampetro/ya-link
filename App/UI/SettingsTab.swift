@@ -2,8 +2,7 @@ import DashCore
 import PhotosUI
 import SwiftUI
 
-/// Tab Cài đặt: hồ sơ, lời chào, ảnh nền, thanh dưới trang chủ, trip và nhớt, tính đường;
-/// chế độ nhà phát triển (chạm 5 lần vào dòng phiên bản) thêm lịch sử sử dụng, log và danh sách thử trên xe.
+/// Tab Cài đặt: hồ sơ, lời chào, ảnh nền, thanh dưới trang chủ, trip và nhớt, tính đường.
 struct SettingsTab: View {
     let link: DashLink
     @ObservedObject var settings: AppSettings
@@ -18,31 +17,23 @@ struct SettingsTab: View {
     @State private var keyInput = ""
     @State private var keyMessage: (ok: Bool, text: String)?
     @State private var testingKey = false
-    @State private var versionTaps = 0
-    @State private var tapReset: DispatchWorkItem?
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 0) {
-                    PageTitle("Cài đặt")
-                    profileGroup
-                    greetingGroup
-                    photoGroup
-                    barGroup
-                    tripGroup
-                    routingGroup
-                    if settings.devMode {
-                        DevHistoryGroup(history: history, toaster: toaster).id("dev")
-                        DevLogGroup(link: link, settings: settings)
-                    }
-                    versionLine(proxy)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
+        ScrollView {
+            VStack(spacing: 0) {
+                PageTitle("Cài đặt")
+                profileGroup
+                greetingGroup
+                photoGroup
+                barGroup
+                tripGroup
+                routingGroup
+                versionLine
             }
-            .scrollDismissesKeyboard(.interactively)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .onChange(of: picked) { items in importPhotos(items) }
     }
 
@@ -329,9 +320,9 @@ struct SettingsTab: View {
         }
     }
 
-    // MARK: - Dòng phiên bản (chạm 5 lần: bật chế độ nhà phát triển)
+    // MARK: - Dòng phiên bản
 
-    private func versionLine(_ proxy: ScrollViewProxy) -> some View {
+    private var versionLine: some View {
         let v = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
         return Text("Ya Link \(v) · Không chính thức, không liên quan tới Yamaha Motor hay Garmin.")
             .font(.system(size: 12.5))
@@ -339,184 +330,5 @@ struct SettingsTab: View {
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .padding(.top, 22)
-            .contentShape(Rectangle())
-            .onTapGesture { tapVersion(proxy) }
-    }
-
-    private func tapVersion(_ proxy: ScrollViewProxy) {
-        guard !settings.devMode else { return }
-        versionTaps += 1
-        tapReset?.cancel()
-        let w = DispatchWorkItem { versionTaps = 0 }
-        tapReset = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: w)
-        if versionTaps >= 5 {
-            versionTaps = 0
-            settings.devMode = true
-            toaster.show("Đã bật chế độ nhà phát triển")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                withAnimation { proxy.scrollTo("dev", anchor: .top) }
-            }
-        } else if versionTaps >= 3 {
-            toaster.show("Còn \(5 - versionTaps) lần nữa")
-        }
-    }
-}
-
-// MARK: - Chế độ nhà phát triển
-
-/// Lịch sử sử dụng: xuất CSV (chia sẻ file) và xoá.
-private struct DevHistoryGroup: View {
-    @ObservedObject var history: HistoryStore
-    let toaster: Toaster
-    @State private var csv: URL?
-    @State private var confirmClear = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            GroupTitle("Lịch sử sử dụng")
-            GroupCard {
-                if let url = csv, !history.history.isEmpty {
-                    SwiftUI.ShareLink(item: url) {
-                        HStack(spacing: 12) {
-                            IconTile(symbol: Sym.doc, color: .blue)
-                            Text("Xuất lịch sử (CSV)").font(.system(size: 16, weight: .medium)).foregroundColor(Theme.blue)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .frame(minHeight: 50)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    LinkRow(title: "Xuất lịch sử (CSV)", icon: (Sym.doc, .blue), disabled: true) {}
-                }
-                RowSeparator(inset: 58)
-                LinkRow(title: "Xoá lịch sử", icon: (Sym.shield, .red), destructive: true, disabled: history.history.isEmpty) {
-                    confirmClear = true
-                }
-            }
-            GroupFoot("Mỗi ngày một dòng (km, lít). Sao lưu cùng iCloud.")
-        }
-        .onAppear { csv = history.exportURL() }
-        .onChange(of: history.history) { _ in csv = history.exportURL() }
-        .confirmationDialog("Xoá toàn bộ lịch sử?", isPresented: $confirmClear, titleVisibility: .visible) {
-            Button("Xoá lịch sử", role: .destructive) {
-                history.clear()
-                toaster.show("Đã xoá lịch sử")
-            }
-            Button("Huỷ", role: .cancel) {}
-        } message: {
-            Text("Không thể khôi phục. Trip và nhớt không bị ảnh hưởng.")
-        }
-    }
-}
-
-/// Trạng thái kết nối, log, danh sách thử trên xe, nút tắt chế độ nhà phát triển.
-private struct DevLogGroup: View {
-    let link: DashLink
-    @ObservedObject var settings: AppSettings
-    @State private var lines: [String] = []
-    @State private var fullText = ""
-    private let tick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            GroupTitle("Nhà phát triển · Trạng thái")
-            DevStatus(link: link)
-            GroupTitle("Nhà phát triển · Log")
-            GroupCard {
-                VStack(alignment: .leading, spacing: 2) {
-                    if lines.isEmpty {
-                        Text("Chưa có dòng log nào.")
-                    } else {
-                        ForEach(Array(lines.enumerated()), id: \.offset) { _, l in Text(l) }
-                    }
-                }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(Theme.sec)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                RowSeparator(inset: 58)
-                SwiftUI.ShareLink(item: fullText) {
-                    HStack(spacing: 12) {
-                        IconTile(symbol: Sym.list, color: .gray)
-                        Text("Xuất log").font(.system(size: 16, weight: .medium)).foregroundColor(Theme.blue)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .frame(minHeight: 50)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                RowSeparator()
-                LinkRow(title: "Tắt chế độ nhà phát triển", destructive: true) { settings.devMode = false }
-            }
-            GroupFoot("Ghi mọi lệnh xe gửi về (nút Enter, ấn giữ, Home…) để dò lỗi khi thử trên xe.")
-            GroupTitle("Thử trên xe (ghi lại kết quả)")
-            GroupCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("1. Bấm HOME → màn chào rồi trang chủ hiện lên đồng hồ?")
-                    Text("2. Bấm UP, DOWN, bấm đúp từng nút.")
-                    Text("3. Bấm ENTER (nút giữa ＋/－) 1 lần, rồi ấn giữ 2 giây.")
-                    Text("4. Ấn giữ UP 2 giây, ấn giữ DOWN 2 giây.")
-                    Text("5. Đang ở màn hình app, bấm HOME thêm 1 lần.")
-                    Text("6. Tắt máy khi đang ở màn hình app, mở lại: có tự quay về không?")
-                }
-                .font(.system(size: 14))
-                .foregroundColor(Theme.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-            }
-        }
-        .onAppear { refresh() }
-        .onReceive(tick) { _ in refresh() }
-    }
-
-    private func refresh() {
-        let recent = link.log.suffix(40).reversed()
-        lines = recent.map { String(format: "%.3f  ", Double($0.ms) / 1000) + $0.text }
-        fullText = link.logText
-    }
-}
-
-private struct DevStatus: View {
-    @ObservedObject var link: DashLink
-
-    var body: some View {
-        GroupCard {
-            Row("Đồng hồ", value: link.partNumber)
-            RowSeparator()
-            Row("Kết nối", subtitle: link.status) { EmptyView() }
-            RowSeparator()
-            Row("Tốc độ xe", value: link.speed.map { "\($0) km/h" } ?? "--")
-            RowSeparator()
-            Row("Nút cuối", value: link.lastButton)
-            RowSeparator()
-            Row("Khung đã gửi", value: "\(link.framesSent) · \(String(format: "%.1f", link.lastFrameKB)) KB")
-            RowSeparator()
-            Row("Gửi → ACK", value: link.lastRoundTripMs.map { "\($0) ms" } ?? "--")
-            RowSeparator()
-            DevCCU(ccu: link.ccu)
-        }
-    }
-}
-
-private struct DevCCU: View {
-    @ObservedObject var ccu: CCULink
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Row("CCU", subtitle: ccu.status) { EmptyView() }
-            RowSeparator()
-            Row("Khoá điện", value: ccu.data.ignitionOn.map { $0 ? "Bật" : "Tắt" } ?? "--")
-            RowSeparator()
-            Row("Vòng tua (chưa chắc)", value: ccu.data.rpm.map { "\($0)" } ?? "--")
-            RowSeparator()
-            Row("Xăng đã dùng", value: ccu.data.fuelUsedL.map { String(format: "%.2f L", $0) } ?? "--")
-        }
     }
 }

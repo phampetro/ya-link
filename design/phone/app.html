@@ -466,29 +466,27 @@
     const bl = v && (v.battery < 11.8 ? "bad" : v.battery < 12.2 ? "warn" : "");
     const none = "—";
     const mt = (ic, c, lab, num, unit, cls) => `<div class="tile ${cls || ""}">${tile(ic, c)}<div class="num">${num}${unit ? `<small>${unit}</small>` : ""}</div><div class="lab">${lab}</div></div>`;
-    if (S.histCleared) {
-      $("#p-car").innerHTML = `<h1>Xe</h1><div class="group"><div class="row col" style="padding:34px 16px;text-align:center;gap:6px"><b style="font-size:17px">Chưa có lịch sử</b><span class="val" style="text-align:center">Đi xe và kết nối app, lịch sử theo ngày sẽ hiện ở đây.</span></div></div>`;
-      return;
-    }
-    const sm = summary(S.range), shown = HIST.slice(0, S.range).reverse(), maxKm = Math.max(...shown.map((x) => x.km), 1);
+    const empty = S.histCleared;
+    const H = empty ? HIST.map((x) => ({ ...x, km: 0, l: null })) : HIST;
+    const sm = empty ? { kmpl: 0, kmOk: 0, l: 0, days: 0, missing: 0 } : summary(S.range), shown = H.slice(0, S.range).reverse(), maxKm = Math.max(...shown.map((x) => x.km), 1);
     if (S.selDay >= S.range) S.selDay = 0;
-    const sel = HIST[S.selDay], selKmpl = kmplOf(sel);
+    const sel = H[S.selDay], selKmpl = kmplOf(sel);
     const bars = shown.map((x) => {
-      const i = HIST.indexOf(x);
+      const i = H.indexOf(x);
       const lab = S.range === 7 ? DAYS_S[x.d.getDay()] : (i % 7 === 0 ? dd(x.d).slice(0, 5) : "");
       return `<div class="bar ${i === S.selDay ? "sel" : ""} ${x.km ? "" : "zero"}" data-day="${i}"><i style="height:${x.km ? Math.max(6, (x.km / maxKm) * 100) : 4}%"></i><span>${lab}</span></div>`;
     }).join("");
-    const rows = HIST.slice(0, S.range).map((x, i) => {
+    const rows = empty ? `<div class="row col" style="padding:26px 16px;text-align:center;gap:6px"><b style="font-size:16px">Chưa có lịch sử</b><span class="val" style="text-align:center">Đi xe và kết nối app, từng ngày sẽ hiện ở đây.</span></div>` : H.slice(0, S.range).map((x, i) => {
       if (!x.km) return `<div class="drow none"><div class="d"><b>${dayName(i)}</b><span>${dd(x.d)}</span></div><div class="r"><b>Không đi</b></div></div>`;
       if (x.l == null) return `<div class="drow miss"><div class="d"><b>${dayName(i)}</b><span>${dd(x.d)} · chưa có số lít</span></div><div class="r"><b>${fmt(x.km)} km</b><span style="color:var(--orange);font-weight:600">Thiếu xăng</span></div></div>`;
       return `<div class="drow"><div class="d"><b>${dayName(i)}</b><span>${dd(x.d)} · ${fmt(x.l, 2)} L</span></div><div class="r"><b>${fmt(x.km)} km</b><span style="color:var(--green);font-weight:600">${fmt(kmplOf(x))} km/L</span></div></div>`;
     }).join("");
     $("#p-car").innerHTML = `<h1>Xe</h1>
       <div class="group hist">
-        <div class="hhead"><div><div class="lab">Tiêu hao trung bình</div><div class="num">${sm.kmpl ? fmt(sm.kmpl) : "—"}<small>km/L</small></div></div>${seg("range", [[7, "7 ngày"], [30, "30 ngày"]], S.range)}</div>
-        <div class="hsub">${fmt(sm.kmOk, 0)} km · ${fmt(sm.l)} L · chạy ${sm.days}/${S.range} ngày${sm.missing ? ` · ${sm.missing} ngày thiếu xăng` : ""}</div>
+        <div class="hhead"><div><div class="lab">Tiêu hao trung bình</div><div class="num">${sm.kmpl ? fmt(sm.kmpl) : "--"}<small>km/L</small></div></div>${seg("range", [[7, "7 ngày"], [30, "30 ngày"]], S.range)}</div>
+        <div class="hsub">${empty ? "Chưa có dữ liệu" : `${fmt(sm.kmOk, 0)} km · ${fmt(sm.l)} L · chạy ${sm.days}/${S.range} ngày${sm.missing ? ` · ${sm.missing} ngày thiếu xăng` : ""}`}</div>
         <div class="chart ${S.range > 7 ? "dense" : ""}">${bars}</div>
-        <div class="hsel"><b>${dayName(S.selDay)} · ${dd(sel.d)}</b>${!sel.km ? `<span class="m">Không đi</span>` : sel.l == null ? `<span class="m"><b>${fmt(sel.km)} km</b> · <b style="color:var(--orange)">thiếu xăng</b></span>` : `<span class="m"><b>${fmt(sel.km)} km</b> · ${fmt(sel.l, 2)} L · <b style="color:var(--green)">${fmt(selKmpl)} km/L</b></span>`}</div>
+        ${empty ? "" : `<div class="hsel"><b>${dayName(S.selDay)} · ${dd(sel.d)}</b>${!sel.km ? `<span class="m">Không đi</span>` : sel.l == null ? `<span class="m"><b>${fmt(sel.km)} km</b> · <b style="color:var(--orange)">thiếu xăng</b></span>` : `<span class="m"><b>${fmt(sel.km)} km</b> · ${fmt(sel.l, 2)} L · <b style="color:var(--green)">${fmt(selKmpl)} km/L</b></span>`}</div>`}
       </div>
       <div class="group-foot">Km/L = tổng km ÷ tổng lít. Ngày không chạy hoặc thiếu xăng không tính.</div>
       <div class="group-title">Theo ngày</div>
@@ -547,23 +545,7 @@
         ` : ""}
       </div>
       ${S.source === "auto" ? `<div class="group-foot">Key chỉ được lưu khi thử thành công.</div>` : ""}
-${S.dev ? `
-      <div class="group-title">Lịch sử sử dụng</div>
-      <div class="group">
-        <div class="row hasico"><span class="lead">${tile("doc", "blue")}<button class="link" data-act="export-hist" ${S.histCleared ? "disabled" : ""}>Xuất lịch sử (CSV)</button></span></div>
-        <div class="row hasico"><span class="lead">${tile("shield", "red")}<button class="link red" data-act="clear-hist" ${S.histCleared ? "disabled" : ""}>Xoá lịch sử</button></span></div>
-      </div>
-      <div class="group-foot">Mỗi ngày một dòng (km, lít). Sao lưu cùng iCloud.</div>
-      <div class="group-title">Nhà phát triển · Log</div>
-      <div class="group"><div class="log">
-        <div><b>12.431</b> ← cmd 51 [] (UP)</div><div><b>12.433</b> → cmd 14 [07 1A 00 00]</div>
-        <div><b>11.870</b> ← LỆNH KHÁC cmd 53 []</div>
-        <div><b>09.102</b> ← cmd 55 [01 00] (Home)</div><div><b>08.870</b> xác thực xong 006-B3952-01 480×234</div>
-        <div><b>08.012</b> thấy: LinkCard · YAMAHA MOTOR Co.Ltd</div></div>
-        <div class="row hasico"><span class="lead">${tile("list", "gray")}<button class="link">Xuất log</button></span></div>
-        <div class="row"><button class="link red" data-act="ver-off">Tắt chế độ nhà phát triển</button></div></div>
-      <div class="group-foot">Ghi mọi lệnh xe gửi về (nút Enter, ấn giữ, Home…) để dò lỗi khi thử trên xe.</div>` : ""}
-      <div class="group-foot" data-act="ver" style="text-align:center;margin-top:22px;user-select:none">Ya Link 0.3 · Không chính thức, không liên quan tới Yamaha Motor hay Garmin.</div>`;
+      <div class="group-foot" style="text-align:center;margin-top:22px">Ya Link 0.3 · Không chính thức, không liên quan tới Yamaha Motor hay Garmin.</div>`;
   }
 
   // ---- Chọn phụ kiện Bluetooth (mô phỏng cửa sổ của iOS) ----
@@ -642,12 +624,6 @@ ${S.dev ? `
     if (a === "goto-name") { S.tab = "set"; renderAll(); $("#p-set").scrollTo(0, 0); setTimeout(() => { const i = $("#name-in"); i && i.focus(); }, 50); }
     if (a === "bt") { S.bt = "scan"; renderAll(); setTimeout(() => { if (S.bt === "scan") { S.bt = "found"; renderBt(); } }, 1300); }
     if (a === "bt-cancel") { S.bt = null; renderAll(); }
-    if (a === "ver") {
-      S.vtap = (S.vtap || 0) + 1; clearTimeout(S.vt); S.vt = setTimeout(() => (S.vtap = 0), 2500);
-      if (S.vtap >= 5) { S.vtap = 0; S.dev = true; renderSetB(); toast("Đã bật chế độ nhà phát triển"); $("#p-set").scrollTo({ top: 99999, behavior: "smooth" }); }
-      else if (S.vtap >= 3) toast("Còn " + (5 - S.vtap) + " lần nữa");
-    }
-    if (a === "ver-off") { S.dev = false; renderSetB(); toast("Đã tắt chế độ nhà phát triển"); }
     if (a === "export-hist") toast("Đã tạo ya-link-lichsu.csv");
     if (a === "clear-hist") { S.bt = "clear"; renderAll(); }
     if (a === "do-clear") { S.bt = null; S.histCleared = true; renderAll(); toast("Đã xoá lịch sử"); }

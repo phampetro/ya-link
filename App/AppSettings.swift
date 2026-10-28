@@ -57,9 +57,6 @@ final class AppSettings: ObservableObject {
     @Published var historyRange: Int {
         didSet { defaults.set(historyRange, forKey: "historyRange") }
     }
-    @Published var devMode: Bool {
-        didSet { defaults.set(devMode, forKey: "devMode") }
-    }
     @Published var onboarded: Bool {
         didSet { defaults.set(onboarded, forKey: "onboarded") }
     }
@@ -88,7 +85,6 @@ final class AppSettings: ObservableObject {
         }
         let r = d.integer(forKey: "historyRange")
         historyRange = (r == 7 || r == 30) ? r : 7
-        devMode = d.bool(forKey: "devMode")
         onboarded = d.bool(forKey: "onboarded")
         googleCalls = d.integer(forKey: monthKey)
     }

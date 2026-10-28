@@ -53,11 +53,7 @@ jobs:
             sleep 6
             xcrun simctl io "$UDID" screenshot "shots/$s.png"
           done
-          # Cài đặt ở chế độ nhà phát triển, và bảng xác nhận điểm đến
-          SIMCTL_CHILD_YALINK_SKIP_ONBOARD=1 SIMCTL_CHILD_YALINK_DEV=1 SIMCTL_CHILD_YALINK_TAB=set \
-            xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
-          sleep 6
-          xcrun simctl io "$UDID" screenshot "shots/set-dev.png"
+          # Bảng xác nhận điểm đến
           SIMCTL_CHILD_YALINK_SKIP_ONBOARD=1 SIMCTL_CHILD_YALINK_CONFIRM=1 SIMCTL_CHILD_YALINK_TAB=nav \
             xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
           sleep 6
