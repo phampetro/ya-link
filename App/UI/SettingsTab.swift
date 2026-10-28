@@ -356,7 +356,7 @@ struct SettingsTab: View {
 
     private var versionLine: some View {
         let v = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0"
-        return Text("Ya Link \(v) · Không chính thức, không liên quan tới Yamaha Motor hay Garmin.")
+        return Text("Ya Link \(v) · Không chính thức\nKhông liên quan Yamaha hay Garmin")
             .font(.system(size: 12.5))
             .foregroundColor(Theme.sec)
             .multilineTextAlignment(.center)
