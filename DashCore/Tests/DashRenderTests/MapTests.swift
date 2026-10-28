@@ -20,7 +20,8 @@ final class MapTests: XCTestCase {
                          destination: "Chợ Bến Thành", remainingKm: 7, eta: Date(timeIntervalSince1970: 1_761_641_000),
                          speedLimit: 60)
         _ = ui.press(.down, now: 0)
-        _ = ui.tick(now: 0.5)                     // chốt bấm đơn: sang trang Bản đồ (hiện ngay)
+        _ = ui.press(.down, now: 0.15)
+        _ = ui.tick(now: 0.7)                     // chốt bấm đúp: sang trang Bản đồ (hiện ngay)
         var t = 2.0
         let steps = zoom - DashUI.defaultZoom
         for _ in 0..<abs(steps) {

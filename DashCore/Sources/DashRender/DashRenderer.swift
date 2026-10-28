@@ -26,7 +26,7 @@ public struct DashRenderer {
     static let bad = RGB(224, 32, 27)
     static let wheelCenterY: CGFloat = 108
     static let wheelRadius: CGFloat = 53
-    static let panelColor = RGB(30, 35, 45)       // nền ô hướng rẽ / giờ đến (kính tối, phẳng)
+    static let panelColor = RGB(30, 35, 45)       // nền ô hướng rẽ / giờ đến / menu (kính tối, phẳng)
     static let mutedText = RGB(224, 224, 224)
 
     public init() {}
@@ -370,8 +370,12 @@ public struct DashRenderer {
         c.fillCircle(center: CGPoint(x: p.x, y: p.y - 19.4), radius: 3.5, RGB.white.cg())
     }
 
-    /// Ô hướng rẽ, giờ đến và biển tốc độ vẽ đè lên bản đồ.
+    /// Ô hướng rẽ, giờ đến và biển tốc độ vẽ đè lên bản đồ; khi menu bản đồ mở thì chỉ có menu.
     private func drawMapOverlays(_ c: Canvas, _ ui: DashUI, pc: RGB) {
+        if ui.menu != nil {
+            drawMapMenu(c, ui, pc: pc)
+            return
+        }
         guard let n = ui.nav else { return }
 
         // Ô hướng rẽ (góc trên trái), đổi màu theo khoảng cách
@@ -407,6 +411,61 @@ public struct DashRenderer {
             c.strokeCircle(center: center, radius: 19.5, Self.bad.cg(), width: 5)
             c.text("\(limit)", x: center.x, y: Self.lineY(center.y - 8.5, 17, 17), size: 17, weight: .bold,
                    color: RGB.black.cg(), align: .center)
+        }
+    }
+
+    /// Menu bản đồ tự vẽ: tấm tối trong x 74–406, y 14–170 (chừa nút ＋/－ và thanh dưới), 4 dòng cao 36 nhìn thấy.
+    private func drawMapMenu(_ c: Canvas, _ ui: DashUI, pc: RGB) {
+        guard let menu = ui.menu else { return }
+        let items = ui.menuItems()
+        guard !items.isEmpty else { return }
+        let index = max(0, min(items.count - 1, menu.index))
+        let start = DashUI.menuWindowStart(index: index, count: items.count)
+        let end = min(items.count, start + DashUI.menuVisibleRows)
+
+        let panel = CGRect(x: 74, y: 14, width: 332, height: CGFloat(end - start) * 36 + 12)
+        c.fill(panel, RGB(36, 41, 53).cg(0.86), radius: 22)
+        c.stroke(panel.insetBy(dx: 0.5, dy: 0.5), RGB.white.cg(0.22), width: 1, radius: 21.5)
+
+        let subColor = RGB(196, 201, 212)
+        for slot in start..<end {
+            let it = items[slot]
+            let selected = slot == index
+            let row = CGRect(x: 80, y: 20 + CGFloat(slot - start) * 36, width: 320, height: 36)
+            if selected {
+                if it.danger {
+                    c.fill(row, Self.bad.cg(0.88), radius: 16)
+                } else {
+                    c.fill(row, RGB.white.cg(0.16), radius: 16)
+                    c.fill(row, pc.cg(0.6), radius: 16)
+                }
+                c.stroke(row.insetBy(dx: 0.5, dy: 0.5), RGB.white.cg(0.3), width: 1, radius: 15.5)
+            }
+            let labelColor: CGColor = it.danger && !selected ? RGB(255, 122, 114).cg() : RGB.white.cg()
+            let sideColor: CGColor = selected ? RGB.white.cg() : subColor.cg()
+            c.withAlpha(it.off ? 0.5 : 1) {
+                let box = CGRect(x: row.minX + 8, y: row.minY + 5, width: 26, height: 26)
+                c.fill(box, it.danger ? Self.bad.cg(0.55) : RGB.white.cg(0.14), radius: 8)
+                c.inBox(24, box.insetBy(dx: 4.5, dy: 4.5)) { Icons.menuIcon(c, it.icon, RGB.white.cg()) }
+
+                let mid = row.minY + 18
+                var right = row.maxX - 12
+                if it.chevron {
+                    let ew = c.measure("›", size: 22, weight: .semibold)
+                    right -= ew
+                    c.text("›", x: right, y: Self.lineY(mid - 11, 22, 22), size: 22, weight: .semibold, color: sideColor)
+                    right -= 6
+                }
+                if let sub = it.sub, !sub.isEmpty {
+                    let sw = min(120, c.measure(sub, size: 16, weight: .medium))
+                    c.text(sub, x: right - sw, y: Self.lineY(mid - 10.4, 20.8, 16), size: 16, weight: .medium,
+                           color: sideColor, maxWidth: 120)
+                    right -= sw + 10
+                }
+                let lx = row.minX + 44
+                c.text(it.label, x: lx, y: Self.lineY(mid - 13.35, 24.7, 19), size: 19, weight: .semibold,
+                       color: labelColor, maxWidth: max(0, right - lx))
+            }
         }
     }
 

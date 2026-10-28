@@ -135,27 +135,29 @@ final class SnapshotTests: XCTestCase {
 
     func testMusic() throws {
         let ui = filled()
-        tap(ui, .up, at: 0)
+        tap(ui, .up, times: 2, at: 0)             // đúp UP: bánh xe sang Nhạc
+        XCTAssertEqual(ui.page, .music)
         try shot("07-music", ui, now: 10)
-        tap(ui, .down, times: 3, at: 10)          // ba lần DOWN: chế độ âm lượng
+        tap(ui, .up, times: 3, at: 10)            // ba lần UP: chế độ âm lượng
         XCTAssertTrue(ui.volumeMode)
         _ = ui.press(.up, now: 11.1)
         try shot("08-music-volume", ui, now: 11.2)
         let none = DashUI()
-        tap(none, .up, at: 0)
+        tap(none, .up, times: 2, at: 0)
         try shot("09-music-empty", none, now: 10)
     }
 
     func testWheelMidRotation() throws {
         let ui = filled()
         _ = ui.press(.down, now: 0)
-        _ = ui.tick(now: 0.5)                       // chốt bấm đơn: bánh xe bắt đầu xoay
-        try shot("10-wheel-rotating", ui, now: 0.7)
+        _ = ui.press(.down, now: 0.15)
+        _ = ui.tick(now: 0.6)                       // chốt bấm đúp: bánh xe bắt đầu xoay
+        try shot("10-wheel-rotating", ui, now: 0.8)
     }
 
     func testMap() throws {
         let ui = filled()
-        tap(ui, .down, at: 0)
+        tap(ui, .down, times: 2, at: 0)
         XCTAssertEqual(ui.page, .map)
         try shot("11-map-open", ui, now: 10)
         var t = 12.0
@@ -168,19 +170,56 @@ final class SnapshotTests: XCTestCase {
 
     func testMapIdleArrowOnly() throws {
         let ui = filled(nav: nil)
-        tap(ui, .down, at: 0)
+        tap(ui, .down, times: 2, at: 0)
         try shot("16-map-idle-arrow", ui, now: 10)
         XCTAssertEqual(ui.bottomBarText(now: 10), "Chia sẻ vị trí từ Google Maps")
     }
 
     func testMapLeavesByDoubleUp() throws {
         let ui = filled()
-        tap(ui, .down, at: 0)
+        tap(ui, .down, times: 2, at: 0)
         let map = try shot("17-map-navigating", ui, now: 20)
         tap(ui, .up, times: 2, at: 20)
         XCTAssertEqual(ui.page, .home)
         let home = try shot("17b-home-after-map", ui, now: 22)
         XCTAssertNotEqual(region(map, x: 0..<480, y: 0..<186), region(home, x: 0..<480, y: 0..<186))
+    }
+
+    func testMapMenu() throws {
+        let ui = filled()
+        tap(ui, .down, times: 2, at: 0)
+        let plain = try shot("17c-map-before-menu", ui, now: 20)
+        tap(ui, .down, times: 3, at: 20)                   // ba lần: mở menu
+        XCTAssertNotNil(ui.menu)
+        let menu = try shot("18-map-menu", ui, now: 22)
+        // Vùng an toàn: nút ＋/－ (x < 56) và thanh dưới (y ≥ 186) giống hệt khi không có menu
+        XCTAssertEqual(region(menu, x: 0..<70, y: 68..<170), region(plain, x: 0..<70, y: 68..<170), "menu đè lên nút ＋/－")
+        XCTAssertEqual(region(menu, x: 0..<480, y: 186..<234), region(plain, x: 0..<480, y: 186..<234), "menu đè lên thanh dưới")
+        XCTAssertNotEqual(region(menu, x: 74..<406, y: 14..<170), region(plain, x: 74..<406, y: 14..<170), "menu phải hiện")
+
+        var t = 22.0
+        t = tap(ui, .up, at: t)                            // xoay vòng tới "Yêu thích"
+        t = tap(ui, .up, times: 2, at: t)                  // đúp: mở danh sách yêu thích
+        XCTAssertEqual(ui.menu?.level, .favorites)
+        try shot("19-map-menu-favourites", ui, now: t)
+
+        let long = filled()
+        long.places.favs += [SavedPlace(name: "Bệnh viện Chợ Rẫy", sub: "Q.5", lat: 10.75, lon: 106.66),
+                             SavedPlace(name: "Chợ Bến Thành", sub: "Q.1", lat: 10.77, lon: 106.69)]
+        var u = 0.0
+        u = tap(long, .down, times: 2, at: u)
+        u = tap(long, .down, times: 3, at: u)
+        u = tap(long, .up, at: u)
+        u = tap(long, .up, times: 2, at: u)
+        XCTAssertEqual(long.menu?.level, .favorites)
+        for _ in 0..<3 { u = tap(long, .down, at: u) }     // dòng cuối: danh sách cuộn
+        try shot("20-map-menu-scrolled", long, now: u)
+
+        let idle = filled(nav: nil)
+        var w = tap(idle, .down, times: 2, at: 0)
+        w = tap(idle, .down, times: 3, at: w)
+        XCTAssertNotNil(idle.menu)
+        try shot("21-map-menu-no-nav", idle, now: w)
     }
 
     func testArrival() throws {

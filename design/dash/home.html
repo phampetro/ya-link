@@ -113,6 +113,20 @@
   .mapview { display: none; }
   .mapview.nonav .turn, .mapview.nonav .eta, .mapview.nonav .msign { display: none; }
   .map.open .mapview { display: block; }
+
+  /* ===== Menu bản đồ (3 lần bấm khi ở trang Bản đồ) =====
+     Tấm kính nằm trong x 74–406, y 14–170: chừa nút ＋/－ (x < 56) và thanh dưới (y ≥ 186). Chữ ≥ 16 px. */
+  .mapmenu { display: none; position: absolute; left: 74px; top: 14px; width: 332px; padding: 6px; box-sizing: border-box; border-radius: 22px; z-index: 6;
+    background: linear-gradient(160deg, rgba(48, 54, 68, 0.78), rgba(22, 26, 34, 0.72)); backdrop-filter: blur(12px) saturate(160%); -webkit-backdrop-filter: blur(12px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.22), 0 8px 22px rgba(0, 0, 0, 0.5); }
+  .mapview.menuopen .mapmenu { display: block; }
+  .mapview.menuopen .turn, .mapview.menuopen .eta, .mapview.menuopen .msign { display: none; }
+  .mi { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px 0 8px; border-radius: 16px; color: #fff; }
+  .mi .mic { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: rgba(255, 255, 255, 0.14); }
+  .mi .mic svg { width: 17px; height: 17px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .mi b { flex: 1; min-width: 0; font: 600 19px/1.3 var(--font); padding-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mi small { flex: none; font: 500 16px/1.3 var(--font); color: #c4c9d4; }
+  .mi em { flex: none; font: 600 22px/1 var(--font); font-style: normal; color: #c4c9d4; margin-left: -4px; }
   .turn { position: absolute; left: 6px; top: 6px; height: 52px; display: flex; align-items: center; gap: 8px; padding-right: 12px; border-radius: 12px; background: rgba(0, 0, 0, 0.72); }
   .turn i { width: 52px; height: 52px; border-radius: 12px; background: rgb(var(--pc)); color: #fff; display: grid; place-items: center; }
   /* cùng thang màu với ô chỉ đường ở trang chủ: vàng 100–500 m, đỏ < 100 m */
@@ -284,6 +298,7 @@
       </div>
       <div class="eta" data-keep="giờ đến">14:42 <span>· 7,0 km</span></div>
       <div class="msign" id="msign" data-keep="biển tốc độ">60</div>
+      <div class="mapmenu" id="mapmenu" data-keep="menu bản đồ"></div>
     </div>
   </section>
 
@@ -305,7 +320,7 @@
   <label>Nút tay lái</label>
   <div class="full btns"><button type="button" id="up">▲ UP</button><button type="button" id="down">▼ DOWN</button><button type="button" id="homebtn">⌂ Home</button></div>
   <label></label>
-  <div class="full" style="color:#a1a1a8">Đồng hồ xe chỉ gửi cho app UP, DOWN và Home (Enter do đồng hồ giữ). Bàn phím: ↑ ↓, H = Home. Bấm 2–3 lần trong 0,4 giây = bấm đúp/ba lần.<br>Home: ↑↓ xoay bánh xe · đúp ↑ hoặc ↓ đổi ảnh nền<br>Nhạc: ↑↓ xoay · đúp ↑ bài sau · đúp ↓ bài trước · ba lần ↑ phát/dừng · ba lần ↓ chỉnh âm lượng (↑ ↓ ±10 %)<br>Bản đồ: hiện ngay, ↑ phóng to · ↓ thu nhỏ · đúp ↑ về Home · đúp ↓ sang Nhạc · Home về Home</div>
+  <div class="full" style="color:#a1a1a8">Đồng hồ xe chỉ gửi cho app UP, DOWN và Home (Enter do đồng hồ giữ). Bàn phím: ↑ ↓, H = Home. Bấm 2–3 lần trong 0,4 giây = bấm 2/3 lần.<br>Home: 1 lần ↑ hoặc ↓ đổi ảnh nền · 2 lần xoay bánh xe (↑ về Nhạc, ↓ về Bản đồ)<br>Nhạc: ↑ bài sau · ↓ bài trước · 2 lần xoay bánh xe · 3 lần ↑ chỉnh âm lượng (↑ ↓ ±10 %) · 3 lần ↓ phát/dừng<br>Bản đồ: hiện ngay, ↑ phóng to · ↓ thu nhỏ · 2 lần ↑ về Home · 2 lần ↓ sang Nhạc · 3 lần mở menu bản đồ (↑↓ chọn · 2 lần xác nhận · Home quay lại/thoát)<br>Home: đóng âm lượng/menu trước, không thì về trang Home</div>
   <label>Giả lập đồng hồ</label><label class="full"><input type="checkbox" id="fps4"> Chỉ ~4 khung/giây như trên xe</label>
   <label>Biển tốc độ</label><label class="full"><input type="checkbox" id="limit" checked> Hiện ở trang bản đồ (khi có dữ liệu)</label>
   <label>Chỉ đường</label><label class="full"><input type="checkbox" id="navon"> Đang dẫn đường (có chuyến đi)</label>
@@ -488,7 +503,7 @@
     drawWheel(wheelRot(performance.now()));
     // Thanh dưới (cmd 3, gửi lại mỗi khi đổi trang): trang Nhạc luôn nhắc an toàn, trang khác theo lựa chọn
     const bar = document.querySelector(".chrome .bar");
-    if (bar) bar.textContent = turnPrompt() ?? (page() === "music" ? (volMode ? "Âm lượng · ▲▼ chỉnh" : "Đúp ▲▼ đổi bài · Ba lần ▲ phát/dừng") : page() === "map" ? mapBar() : barText[$("bar").value]);
+    if (bar) bar.textContent = turnPrompt() ?? (page() === "music" ? (volMode ? "Âm lượng · ▲▼ chỉnh" : "▲▼ đổi bài · 3 lần: ▲ âm lượng ▼ phát/dừng") : page() === "map" ? mapBar() : barText[$("bar").value]);
 
     // Bản đồ: biểu tượng hướng rẽ và khoảng cách (≥ 1 km ghi km, dưới 1 km làm tròn 10 m)
     const turnPaths = {
@@ -556,7 +571,7 @@
     $("volbar").style.height = `${volume}%`;
   }
 
-  // Âm lượng: ba lần DOWN mở, UP/DOWN tăng/giảm 10% (bấm là chỉnh ngay), tự đóng sau 3 s không bấm
+  // Âm lượng: ba lần UP mở, UP/DOWN tăng/giảm 10% (bấm là chỉnh ngay), tự đóng sau 3 s không bấm
   let volMode = false, volume = 60, volTimer = null;
   function openVol() {
     if (page() !== "music") return;
@@ -599,10 +614,12 @@
   }
   drawSong();
 
-  // Nút tay lái: đồng hồ chỉ gửi UP, DOWN, Home. Mọi lần bấm chờ cửa sổ 0,4 s để biết bấm 1, 2 hay 3 lần
-  // (đủ số lần tối đa của trang thì chốt ngay): Home 2 · Nhạc 3 · Bản đồ 2. Chế độ âm lượng: bấm là chỉnh ngay.
-  //   Home: 1 lần xoay · đúp = ảnh kế · Nhạc: 1 lần xoay, đúp UP bài sau, đúp DOWN bài trước,
-  //   ba lần UP phát/dừng, ba lần DOWN âm lượng · Bản đồ: UP phóng to, DOWN thu nhỏ, đúp UP về Home, đúp DOWN sang Nhạc.
+  // Nút tay lái: đồng hồ chỉ gửi UP, DOWN, Home. Các lần bấm cùng một nút trong 0,4 s được đếm (1, 2, 3);
+  // chốt khi hết cửa sổ hoặc khi đủ 3 lần. Chế độ âm lượng: bấm là chỉnh ngay.
+  //   Home: 1 lần ảnh kế · 2 lần xoay bánh xe (UP→Nhạc, DOWN→Bản đồ) · 3 lần không làm gì
+  //   Nhạc: UP bài sau, DOWN bài trước · 2 lần xoay · 3 lần UP âm lượng, 3 lần DOWN phát/dừng
+  //   Bản đồ: UP phóng to, DOWN thu nhỏ · 2 lần xoay (UP Home, DOWN Nhạc) · 3 lần mở menu bản đồ
+  //   Menu bản đồ: 1 lần chọn (xoay vòng) · 2 lần xác nhận · 3 lần không làm gì · Home lùi/đóng
   const DOUBLE_MS = 400;
   let pending = null;   // { dir, count, timer }
   // Bản đồ hiện ngay khi bánh xe tới trang Bản đồ (không còn màn bìa): menu trượt ra phải, thanh dưới nhắc cách dùng 3 s đầu.
@@ -727,12 +744,67 @@
   }
   function mapBar() {
     const now = performance.now();
+    if (menu) return "▲▼ chọn · đúp: xác nhận · Home thoát";
+    if (now < noteUntil) return noteText;
     if (now < zoomHintUntil) return `Thu phóng · ${SCALE[zoom]}`;
-    if (now < hintUntil) return "▲▼ thu phóng · đúp ▲ thoát";
+    if (now < hintUntil) return "▲▼ thu phóng · 3 lần: menu";
     return $("navon").checked ? "Nguyễn Huệ" : "Chia sẻ vị trí từ Google Maps";
   }
-  // Lưu ý: app lưu Nhà/Công ty/Yêu thích; mockup chỉ nhận để khỏi lỗi (menu bản đồ do đồng hồ xe lo)
-  const places = { home: null, work: null, favs: [] };
+  // ===== Menu bản đồ: 3 lần bấm ở trang Bản đồ. App TỰ VẼ menu này vào ảnh (không dùng menu gốc của đồng hồ).
+  // ▲▼ chọn, 2 lần xác nhận, Home thoát/quay lại, tự đóng sau 8 s. "Dừng chỉ đường" chỉ có khi đang chỉ đường.
+  const places = { home: { name: "Nhà", sub: "Quận 7" }, work: { name: "Công ty", sub: "Bitexco, Q.1" }, favs: [{ name: "Cà phê Bờ Hồ", sub: "Q.1" }, { name: "Sân vận động Thống Nhất", sub: "Q.10" }] };
+  let menu = null, menuTimer = null, destName = "Chợ Bến Thành", noteText = "", noteUntil = 0;
+  const MI = {
+    stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>',
+    home: '<svg viewBox="0 0 24 24"><path d="M4 11.5L12 4l8 7.5M6.5 10v9h11v-9"/></svg>',
+    work: '<svg viewBox="0 0 24 24"><rect x="3.5" y="8" width="17" height="11" rx="2.5"/><path d="M9 8V6.2A1.7 1.7 0 0 1 10.7 4.5h2.6A1.7 1.7 0 0 1 15 6.2V8M3.5 13h17"/></svg>',
+    star: '<svg viewBox="0 0 24 24"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.6-4.8 2.6 1-5.4-4-3.8 5.4-.7z"/></svg>',
+    back: '<svg viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></svg>',
+  };
+  const note = (t, ms = 2500) => { noteText = t; noteUntil = performance.now() + ms; render(); setTimeout(render, ms + 60); };
+  function setNav(on) {
+    const c = $("navon");
+    c.checked = on;
+    c.dispatchEvent(new Event("input", { bubbles: true }));
+    if (window.parent !== window) parent.postMessage({ yalinkNav: true, on }, "*");   // báo cho app điện thoại
+  }
+  function menuItems() {
+    if (menu.level === "fav") {
+      const list = places.favs.length ? places.favs.map((f, i) => ({ k: "fav", i, label: f.name, sub: f.sub, ic: "star" })) : [{ k: "none", label: "Chưa có yêu thích", ic: "star", off: true }];
+      return [{ k: "back", label: "Quay lại", ic: "back" }, ...list];
+    }
+    const nav = $("navon").checked;
+    return [
+      ...(nav ? [{ k: "stop", label: "Dừng chỉ đường", ic: "stop", danger: true }] : []),
+      { k: "home", label: "Về nhà", sub: places.home ? places.home.sub : "Chưa đặt", ic: "home", off: !places.home },
+      { k: "work", label: "Đến công ty", sub: places.work ? places.work.sub : "Chưa đặt", ic: "work", off: !places.work },
+      { k: "favs", label: "Yêu thích", sub: places.favs.length ? places.favs.length + " nơi" : "Chưa có", ic: "star", chev: true },
+    ];
+  }
+  function drawMenu() {
+    document.querySelector(".mapview").classList.toggle("menuopen", !!menu);
+    if (!menu) { $("mapmenu").innerHTML = ""; return; }
+    const items = menuItems(), VIS = 4;
+    menu.i = Math.max(0, Math.min(items.length - 1, menu.i));
+    const start = Math.max(0, Math.min(items.length - VIS, menu.i - 1));
+    $("mapmenu").innerHTML = items.slice(start, start + VIS).map((it, k) =>
+      `<div class="mi ${start + k === menu.i ? "sel" : ""} ${it.off ? "off" : ""} ${it.danger ? "danger" : ""}"><span class="mic">${MI[it.ic]}</span><b>${it.label}</b>${it.sub ? `<small>${it.sub}</small>` : ""}${it.chev ? "<em>›</em>" : ""}</div>`).join("");
+  }
+  const armMenu = () => { clearTimeout(menuTimer); menuTimer = setTimeout(closeMenu, 8000); };
+  function openMenu() { if (menu) return; menu = { level: "main", i: 0 }; armMenu(); drawMenu(); render(); }
+  function closeMenu() { menu = null; clearTimeout(menuTimer); drawMenu(); render(); }
+  function menuMove(dir) { const n = menuItems().length; menu.i = (menu.i + (dir < 0 ? -1 : 1) + n) % n; armMenu(); drawMenu(); }
+  function menuBack() { if (menu.level === "fav") { menu = { level: "main", i: 0 }; armMenu(); drawMenu(); } else closeMenu(); }
+  function goTo(p) { destName = p.name; setNav(true); closeMenu(); note("Đi tới " + p.name); }
+  function menuSelect() {
+    const it = menuItems()[menu.i];
+    if (it.k === "stop") { setNav(false); closeMenu(); note("Đã dừng chỉ đường"); }
+    else if (it.k === "home") { if (places.home) goTo(places.home); else { closeMenu(); note("Chưa đặt nhà"); } }
+    else if (it.k === "work") { if (places.work) goTo(places.work); else { closeMenu(); note("Chưa đặt công ty"); } }
+    else if (it.k === "favs") { menu = { level: "fav", i: places.favs.length ? 1 : 0 }; armMenu(); drawMenu(); }
+    else if (it.k === "fav") goTo(places.favs[it.i]);
+    else if (it.k === "back") menuBack();
+  }
 
   function enterMap() {
     mapMode = true;
@@ -748,6 +820,7 @@
   function exitMap(instant) {
     mapMode = false;
     document.querySelector(".map").classList.remove("open");
+    menu = null; drawMenu();
     if (instant) menuX.fill(0); else slideMenu(false);
     render();
   }
@@ -757,31 +830,43 @@
     if (on && !mapMode) enterMap();
     else if (!on && mapMode) exitMap();
   }
-  // Home (lệnh 55 khi đang hiện): từ mọi trang về trang Home
+  // Home (lệnh 55 khi đang hiện): đóng menu (lùi một cấp) hoặc âm lượng trước, không thì từ mọi trang về trang Home
   function homePress() {
     if (introT0 !== null) return;
     clearTimeout(pending && pending.timer);
     pending = null;
-    if (volMode) closeVol();
+    if (menu) return menuBack();
+    if (volMode) return closeVol();
     const i = order.indexOf(page());
     if (i !== 1) go(1 - i);
   }
 
-  // Chốt một chuỗi bấm `count` lần theo `dir` (-1 UP, +1 DOWN) ở trang hiện tại
+  // Chốt một chuỗi bấm `count` lần theo `dir` (-1 UP, +1 DOWN)
   function resolvePress(dir, count) {
-    const pg = page();
-    if (pg === "home") return count >= 2 ? nextSlide() : go(dir);
-    if (pg === "music") {
-      if (count === 1) return go(dir);
-      if (count === 2) return skip(dir < 0 ? 1 : -1);
-      return dir < 0 ? togglePlay() : openVol();
+    if (menu) {
+      if (count === 1) menuMove(dir);
+      else if (count === 2) menuSelect();
+      return;
     }
-    if (count >= 2) return go(dir);                         // đúp UP về Home, đúp DOWN sang Nhạc
-    setZoom(zoom + (dir < 0 ? 1 : -1));                     // UP phóng to, DOWN thu nhỏ
+    const pg = page();
+    if (pg === "home") {
+      if (count === 1) nextSlide();
+      else if (count === 2) go(dir);
+      return;
+    }
+    if (pg === "music") {
+      if (count === 1) return skip(dir < 0 ? 1 : -1);
+      if (count === 2) return go(dir);
+      return dir < 0 ? openVol() : togglePlay();
+    }
+    if (count === 1) return setZoom(zoom + (dir < 0 ? 1 : -1));   // UP phóng to, DOWN thu nhỏ
+    if (count === 2) return go(dir);                              // UP về Home, DOWN sang Nhạc
+    openMenu();
   }
   function press(dir) {
     if (introT0 !== null) return;
     if (volMode) return stepVol(dir < 0 ? 10 : -10);        // đang chỉnh âm lượng: ＋/－ tác dụng ngay
+    if (menu) armMenu();
     let count = 1;
     if (pending) {
       clearTimeout(pending.timer);
@@ -789,7 +874,7 @@
       pending = null;
       if (p.dir === dir) count = p.count + 1; else resolvePress(p.dir, p.count);
     }
-    if (count >= (page() === "music" ? 3 : 2)) return resolvePress(dir, count);
+    if (count >= 3) return resolvePress(dir, count);
     pending = { dir, count, timer: setTimeout(() => { const p = pending; pending = null; resolvePress(p.dir, p.count); }, DOUBLE_MS) };
   }
 
@@ -805,7 +890,7 @@
     clearInterval(slideTimer);
     if (photos.length > 1) slideTimer = setInterval(() => { slide = (slide + 1) % photos.length; showSlide(); }, $("every").value * 1000);
   }
-  // Đúp UP/DOWN ở trang chủ: sang ảnh kế ngay, rồi đếm lại thời gian từ đầu
+  // Bấm 1 lần UP/DOWN ở trang chủ: sang ảnh kế, rồi đếm lại thời gian từ đầu
   function nextSlide() {
     if (photos.length < 2) return;
     slide = (slide + 1) % photos.length;
@@ -834,7 +919,7 @@
     const click = { up: "up", down: "down", home: "homebtn", welcome: "intro" }[d.btn];   // enter/hold: đồng hồ xe không gửi cho app
     if (click) $(click).click();
     if (d.barKey) { barText[d.barKey] = d.barText; $("bar").value = d.barKey; $("bar").dispatchEvent(new Event("input", { bubbles: true })); }
-    if (d.places) { places.home = d.places.home; places.work = d.places.work; places.favs = d.places.favs; }
+    if (d.places) { places.home = d.places.home; places.work = d.places.work; places.favs = d.places.favs; if (menu) drawMenu(); }
     if (d.name !== undefined) { userName = d.name; fillWelcome(); }
     if (d.greeting !== undefined) welcomeOn = !!d.greeting;
     if (d.glow !== undefined) { $("fstyle").value = d.glow ? "glow" : "off"; $("frame").className = `frame ${$("fstyle").value}`; }
