@@ -273,7 +273,7 @@ final class NavigationController: ObservableObject {
 
     /// Cảnh bản đồ cho bộ vẽ (nil khi chưa có vị trí); khi chưa chỉ đường vẫn vẽ bản đồ quanh xe.
     func mapScene() -> MapScene? {
-        guard let loc = lastFix else { return nil }
+        guard let loc = lastFix, Date().timeIntervalSince(loc.timestamp) < 120 else { return nil }   // vị trí cũ thì không vẽ sai chỗ
         let center = MapPoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
         let pts = route?.points.map { MapPoint(lat: $0.lat, lon: $0.lon) } ?? []
         tiles.prefetch(around: center, z: 14, radius: 1)

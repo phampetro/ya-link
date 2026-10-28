@@ -23,7 +23,10 @@ struct YaLinkApp: App {
                 .onAppear { link.start() }
                 .onOpenURL { link.handleOpen($0) }
                 .onChange(of: scenePhase) { phase in
-                    if phase == .active { link.checkPasteboardForShare() }
+                    if phase == .active {
+                        link.checkPasteboardForShare()
+                        link.location.requestOnce()      // mở app: lấy vị trí một lần cho thời tiết và bản đồ
+                    }
                 }
         }
     }

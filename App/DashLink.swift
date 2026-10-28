@@ -89,7 +89,7 @@ final class DashLink: NSObject, ObservableObject {
         switch navigation.state {
         case .active, .routing: mode = .background
         case .resolving, .confirm: mode = .foreground
-        default: mode = ui.mapOpen ? .foreground : .off
+        default: mode = ui.mapOpen ? .background : .off      // xem bản đồ trên đồng hồ khi khoá máy vẫn phải có vị trí
         }
         location.setTracking(mode)
         if mode == .off, Date().timeIntervalSince(lastWeatherAt) > 600, t - lastOneShotAt > 60 {
