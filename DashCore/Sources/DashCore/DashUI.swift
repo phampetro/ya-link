@@ -125,6 +125,12 @@ public final class DashUI {
             actions += resolvePending(p, now: now)
         }
         if volumeMode && now > volumeUntil { volumeMode = false }
+        if let a = arrivedAt, now - a >= Self.arrivalDuration {
+            arrivedAt = nil
+            mapOpen = false
+            mapToggledAt = now
+            if page != .home { rotate(by: Page.home.rawValue - page.rawValue, now: now) }
+        }
         return actions
     }
 
@@ -139,8 +145,28 @@ public final class DashUI {
     /// Bắt đầu dẫn đường (chia sẻ từ Google Maps): xoay sang Bản đồ và mở luôn.
     public func startNavigation(_ info: NavInfo, now: TimeInterval) {
         nav = info
+        arrivedAt = nil
         if page != .map { rotate(by: Page.map.rawValue - page.rawValue, now: now) }
         openMap(now: now)
+    }
+
+    public static let arrivalDuration: TimeInterval = 4
+    public private(set) var arrivedAt: TimeInterval?
+    public private(set) var arrivedDestination = ""
+
+    /// Tới nơi: hiện "Đã tới nơi" 4 s, bỏ chuyến đi, rồi tự về trang chủ (gọi `tick`).
+    public func arrive(now: TimeInterval) {
+        arrivedDestination = nav?.destination ?? ""
+        arrivedAt = now
+        nav = nil
+    }
+
+    public func showingArrival(_ now: TimeInterval) -> Bool {
+        arrivedAt.map { now - $0 < Self.arrivalDuration } ?? false
+    }
+
+    public func cancelNavigation() {
+        nav = nil
     }
 
     private func resolvePending(_ p: (button: Button, at: TimeInterval), now: TimeInterval) -> [Action] {
@@ -196,6 +222,7 @@ public final class DashUI {
 
     public func bottomBarText(now: TimeInterval) -> String {
         if inWelcome(now) { return "Chúc thượng lộ bình an" }
+        if showingArrival(now) { return "Đã tới \(arrivedDestination)" }
         if let n = nav, n.distanceToTurnM < 100, !mapOpen { return n.maneuver.prompt(n.nextStreet) }
         switch page {
         case .music: return "LƯU Ý LÁI XE AN TOÀN"

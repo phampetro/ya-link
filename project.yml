@@ -17,11 +17,12 @@ targets:
         product: DashCore
       - package: DashCore
         product: DashRender
+      - target: YaLinkShare
     scheme: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.trongpm.yalink
-        MARKETING_VERSION: "0.2"
+        MARKETING_VERSION: "0.3"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
@@ -30,6 +31,9 @@ targets:
       properties:
         CFBundleDisplayName: Ya Link
         CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.trongpm.yalink
+            CFBundleURLSchemes: [yalink]
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
@@ -42,3 +46,29 @@ targets:
         NSLocationAlwaysAndWhenInUseUsageDescription: Dùng vị trí khi điện thoại khoá trong túi để tiếp tục dẫn đường trên đồng hồ xe.
         NSAppleMusicUsageDescription: Hiện tên bài và điều khiển Apple Music từ nút trên tay lái.
         NSBluetoothAlwaysUsageDescription: Kết nối với bộ CCU của xe để đọc nhiệt độ máy, điện áp ắc quy và ODO.
+  # Tiện ích "Chia sẻ" từ Google Maps → mở Ya Link bằng yalink://share?text=…
+  YaLinkShare:
+    type: app-extension
+    platform: iOS
+    sources: [ShareExtension]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trongpm.yalink.share
+        APPLICATION_EXTENSION_API_ONLY: YES
+        MARKETING_VERSION: "0.3"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Ya Link
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true

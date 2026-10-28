@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreLocation
 import DashCore
 import DashRender
 import ExternalAccessory
@@ -34,6 +35,13 @@ final class DashLink: NSObject, ObservableObject {
     let ui = DashUI()
     let photos = PhotoStore()
     let music = MusicController()
+    let settings = AppSettings()
+    let location = LocationService()
+    let ccu = CCULink()
+    private(set) var navigation: NavigationController!
+    private var lastWeatherAt: Date = .distantPast
+    private var lastWeatherPlace = ""
+    private var lastOdoKm: Double?
     private let renderer = DashRenderer()
     private let session = LinkASession()
     private var ea: EASession?
@@ -50,10 +58,21 @@ final class DashLink: NSObject, ObservableObject {
 
     private var now: TimeInterval { Date().timeIntervalSince(started) }
 
+    override init() {
+        super.init()
+        let t0 = started
+        navigation = NavigationController(ui: ui, settings: settings, clock: { Date().timeIntervalSince(t0) })
+        navigation.onChange = { [weak self] in self?.dirty = true }
+    }
+
     func start() {
-        ui.homeBarText = "ODO -- km"            // Link B (ODO) chưa làm
+        ui.homeBarText = settings.odometer.barText(odoKm: nil)
         photos.load()
         music.requestAccess()
+        location.onUpdate = { [weak self] loc in self?.locationUpdated(loc) }
+        location.start()
+        ccu.onLog = { [weak self] line in self?.add("CCU: \(line)") }
+        ccu.start()
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidConnect, object: nil)
         nc.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidDisconnect, object: nil)
@@ -89,6 +108,78 @@ final class DashLink: NSObject, ObservableObject {
             }
             dirty = true
         }
+    }
+
+    private func locationUpdated(_ loc: CLLocation) {
+        navigation.locationUpdated(loc)
+        if ui.nav != nil || ui.mapOpen { dirty = true }
+        refreshWeatherIfNeeded(loc)
+    }
+
+    /// Thời tiết: hỏi lại sau 10 phút, hoặc khi đổi khu vực.
+    private func refreshWeatherIfNeeded(_ loc: CLLocation) {
+        let place = location.placeName
+        guard Date().timeIntervalSince(lastWeatherAt) > 600 || (place != lastWeatherPlace && !place.isEmpty) else { return }
+        lastWeatherAt = Date()
+        lastWeatherPlace = place
+        let lat = loc.coordinate.latitude, lon = loc.coordinate.longitude
+        Task {
+            if let w = try? await fetchWeather(lat: lat, lon: lon, place: place) {
+                ui.weather = w
+                dirty = true
+            }
+        }
+    }
+
+    /// Dữ liệu xe từ Link B vào giao diện; ODO đổi thì cập nhật chữ thanh dưới trang chủ.
+    private func syncVehicle() {
+        let d = ccu.data
+        let coolant = d.coolantC, battery = d.batteryV
+        if ui.vehicle.coolantC != coolant || ui.vehicle.batteryV != battery {
+            ui.vehicle = VehicleInfo(coolantC: coolant, batteryV: battery)
+            dirty = true
+        }
+        if d.odoKm != lastOdoKm {
+            lastOdoKm = d.odoKm
+            if let odo = d.odoKm { settings.odometer.sync(odoKm: odo) }
+            ui.homeBarText = settings.odometer.barText(odoKm: d.odoKm)
+        }
+    }
+
+    func resetTrip(_ n: Int) {
+        guard let odo = ccu.data.odoKm else { return }
+        if n == 1 { settings.odometer.resetTrip1(odoKm: odo) } else { settings.odometer.resetTrip2(odoKm: odo) }
+        ui.homeBarText = settings.odometer.barText(odoKm: odo)
+        dirty = true
+    }
+
+    func oilChanged() {
+        guard let odo = ccu.data.odoKm else { return }
+        settings.odometer.oilChanged(odoKm: odo)
+        ui.homeBarText = settings.odometer.barText(odoKm: odo)
+        dirty = true
+    }
+
+    func refreshBarText() {
+        ui.homeBarText = settings.odometer.barText(odoKm: ccu.data.odoKm)
+        dirty = true
+    }
+
+    /// Mở từ tiện ích Chia sẻ: yalink://share?text=…
+    func handleOpen(_ url: URL) {
+        guard url.scheme == "yalink",
+              let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "text" })?.value
+        else { return }
+        navigation.handleShared(text: text)
+    }
+
+    /// Dự phòng khi tiện ích không mở được app: nó chép chữ vào bộ nhớ tạm.
+    func checkPasteboardForShare() {
+        guard navigation.state == .idle, UIPasteboard.general.hasStrings,
+              let s = UIPasteboard.general.string,
+              s.contains("goo.gl/maps") || s.contains("maps.app.goo.gl") || s.contains("google.com/maps") else { return }
+        UIPasteboard.general.string = ""
+        navigation.handleShared(text: s)
     }
 
     private func applySimulatedNav() {
@@ -216,6 +307,7 @@ final class DashLink: NSObject, ObservableObject {
         send(session.tick(now: t).send)
         perform(ui.tick(now: t))
         if photos.tick(now: t) { dirty = true }
+        syncVehicle()
         if t - lastMusicPoll > 1 {
             lastMusicPoll = t
             let m = music.info
@@ -233,7 +325,10 @@ final class DashLink: NSObject, ObservableObject {
 
         let animating = ui.isAnimating(now: t) || photos.isFading(now: t)
         let keepAlive: TimeInterval = ui.page == .music ? 1 : 2
-        let wantFrame = session.canSendFrame && outBuffer.isEmpty && (animating || dirty || t - lastFrameAt > keepAlive)
+        // Trang chủ chỉ cần tối đa 1 khung/giây; bản đồ đang mở thì gửi nhanh nhất có thể
+        let minGap: TimeInterval = ui.mapOpen || animating ? 0 : 1
+        let wantFrame = session.canSendFrame && outBuffer.isEmpty && t - lastFrameAt >= minGap
+            && (animating || dirty || t - lastFrameAt > keepAlive)
         let wantPreview = t - lastPreviewAt > (animating ? 0.1 : 0.5)
         guard wantFrame || wantPreview else { return }
 
@@ -244,6 +339,7 @@ final class DashLink: NSObject, ObservableObject {
         input.photo = p.photo
         input.previousPhoto = p.previous
         input.photoFade = p.fade
+        if ui.mapOpen { input.map = navigation.mapScene() }
         guard let image = renderer.render(ui, now: t, input: input) else { return }
 
         if wantPreview {

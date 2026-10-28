@@ -14,6 +14,8 @@ public struct DashRenderer {
         public var previousPhoto: CGImage?
         public var photoFade: Double = 1
         public var dim: Double = 0.15
+        /// Dữ liệu bản đồ thật cho trang Bản đồ đang mở; nil thì vẽ sơ đồ minh họa.
+        public var map: MapScene?
         public var date = Date()
         public init() {}
     }
@@ -54,7 +56,7 @@ public struct DashRenderer {
             case .home: drawHome(c, ui, pc: pc, slide: entry)
             case .music: drawMusic(c, ui, pc: pc, now: now)
             case .map:
-                if ui.mapOpen { drawMapOpen(c, ui, pc: pc, date: input.date) } else { drawMapCover(c, ui, pc: pc, date: input.date) }
+                if ui.mapOpen { drawMapOpen(c, ui, pc: pc, date: input.date, map: input.map) } else { drawMapCover(c, ui, pc: pc, date: input.date) }
             }
         }
 
@@ -246,7 +248,17 @@ public struct DashRenderer {
 
     /// Bản đồ đang mở. Chưa có dữ liệu bản đồ thật: vẽ sơ đồ tuyến theo mức zoom (đường lớn, đường nhỏ,
     /// tuyến màu trang). Bản đồ vector (OpenFreeMap) sẽ thay phần sơ đồ này.
-    private func drawMapOpen(_ c: Canvas, _ ui: DashUI, pc: RGB, date: Date) {
+    private func drawMapOpen(_ c: Canvas, _ ui: DashUI, pc: RGB, date: Date, map: MapScene?) {
+        if let scene = map {
+            MapRenderer.draw(c, scene: scene, zoomIndex: ui.zoom, pc: pc)
+        } else {
+            drawSchematic(c, ui, pc: pc)
+        }
+        drawMapOverlays(c, ui, pc: pc)
+    }
+
+    /// Sơ đồ minh họa khi chưa có dữ liệu bản đồ thật (và cho test ảnh chụp).
+    private func drawSchematic(_ c: Canvas, _ ui: DashUI, pc: RGB) {
         let z = CGFloat(DashUI.zoomScales[ui.zoom])
         func X(_ x: CGFloat) -> CGFloat { 238 + x * z }
         func Y(_ y: CGFloat) -> CGFloat { 160 + y * z }
@@ -282,7 +294,10 @@ public struct DashRenderer {
         c.fill(me, RGB.white.cg())
         c.stroke(me, RGB(10, 12, 10).cg(), width: 3)
         c.fill(me, RGB.white.cg())
+    }
 
+    /// Ô hướng rẽ, giờ đến và biển tốc độ vẽ đè lên bản đồ.
+    private func drawMapOverlays(_ c: Canvas, _ ui: DashUI, pc: RGB) {
         guard let n = ui.nav else {
             c.text("Chưa chỉ đường", x: 240, y: 8, size: 17, weight: .semibold, color: RGB.white.cg(), align: .center)
             return

@@ -111,6 +111,17 @@ final class DashUITests: XCTestCase {
         XCTAssertTrue(ui.mapOpen)
     }
 
+    func testArrivalReturnsHome() {
+        let ui = DashUI()
+        ui.startNavigation(nav(distance: 20), now: 0)
+        ui.arrive(now: 10)
+        XCTAssertNil(ui.nav)
+        XCTAssertEqual(ui.bottomBarText(now: 11), "Đã tới Chợ Bến Thành")
+        _ = ui.tick(now: 14.5)
+        XCTAssertEqual(ui.page, .home)
+        XCTAssertFalse(ui.mapOpen)
+    }
+
     func testDistanceFormatting() {
         let cases: [(Double, String)] = [(1840, "1,8 km"), (1260, "1,3 km"), (980, "1,0 km"), (960, "950 m"),
                                          (430, "450 m"), (120, "100 m"), (95, "100 m"), (90, "90 m"), (40, "40 m")]
