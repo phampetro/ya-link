@@ -191,36 +191,6 @@ enum Icons {
         c.stroke(w, color, width: 2.4)
     }
 
-    // MARK: Menu bản đồ (hộp 24, nét)
-
-    static func menuIcon(_ c: Canvas, _ icon: MapMenu.Icon, _ color: CGColor) {
-        let p = CGMutablePath()
-        switch icon {
-        case .stop:
-            p.addRoundedRect(in: CGRect(x: 6, y: 6, width: 12, height: 12), cornerWidth: 2.5, cornerHeight: 2.5)
-        case .home:
-            p.move(to: CGPoint(x: 4, y: 11.5)); p.addLine(to: CGPoint(x: 12, y: 4)); p.addLine(to: CGPoint(x: 20, y: 11.5))
-            p.move(to: CGPoint(x: 6.5, y: 10)); p.addLine(to: CGPoint(x: 6.5, y: 19)); p.addLine(to: CGPoint(x: 17.5, y: 19))
-            p.addLine(to: CGPoint(x: 17.5, y: 10))
-        case .work:
-            p.addRoundedRect(in: CGRect(x: 3.5, y: 8, width: 17, height: 11), cornerWidth: 2.5, cornerHeight: 2.5)
-            p.move(to: CGPoint(x: 9, y: 8)); p.addLine(to: CGPoint(x: 9, y: 6.2))
-            p.addQuadCurve(to: CGPoint(x: 10.7, y: 4.5), control: CGPoint(x: 9, y: 4.5))
-            p.addLine(to: CGPoint(x: 13.3, y: 4.5))
-            p.addQuadCurve(to: CGPoint(x: 15, y: 6.2), control: CGPoint(x: 15, y: 4.5))
-            p.addLine(to: CGPoint(x: 15, y: 8))
-            p.move(to: CGPoint(x: 3.5, y: 13)); p.addLine(to: CGPoint(x: 20.5, y: 13))
-        case .star:
-            p.addLines(between: [CGPoint(x: 12, y: 4), CGPoint(x: 14.4, y: 9), CGPoint(x: 19.8, y: 9.7), CGPoint(x: 15.8, y: 13.5),
-                                 CGPoint(x: 16.8, y: 18.9), CGPoint(x: 12, y: 16.3), CGPoint(x: 7.2, y: 18.9),
-                                 CGPoint(x: 8.2, y: 13.5), CGPoint(x: 4.2, y: 9.7), CGPoint(x: 9.6, y: 9)])
-            p.closeSubpath()
-        case .back:
-            p.move(to: CGPoint(x: 14.5, y: 6)); p.addLine(to: CGPoint(x: 8.5, y: 12)); p.addLine(to: CGPoint(x: 14.5, y: 18))
-        }
-        c.stroke(p, color, width: 2.6)
-    }
-
     // MARK: Logo đồng hồ tốc độ (viewBox 140 205 744 620; chép từ design/logo/app-icon.svg)
 
     /// Cung tròn tâm `center`, bán kính `radius`, đi từ điểm `a` tới điểm `b` theo chiều kim đồng hồ trên màn hình.

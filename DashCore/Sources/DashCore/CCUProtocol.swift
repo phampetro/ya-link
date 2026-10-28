@@ -596,6 +596,8 @@ public enum CCUVehicle {
             case 72:
                 // big-endian ÷ 10 = km
                 guard !p.raw.isEmpty, p.raw.count <= 8 else { continue }
+                // Toàn 0xFF = "chưa có giá trị" (không phải ODO thật)
+                guard p.raw.contains(where: { $0 != 0xFF }) else { continue }
                 var v: UInt64 = 0
                 for byte in p.raw { v = v << 8 | UInt64(byte) }
                 d.odoKm = Double(v) / 10

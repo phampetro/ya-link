@@ -11,12 +11,17 @@ import Foundation
 @MainActor
 final class CCULink: NSObject, ObservableObject {
     @Published private(set) var data = CCUVehicleData()
-    @Published private(set) var status: String = "Chưa thấy CCU"
+    /// Câu tiếng Việt cho người dùng, ví dụ "Dữ liệu xe: đang chờ phản hồi (12 s)". Cập nhật mỗi giây.
+    @Published private(set) var status: String = "Dữ liệu xe: đang kết nối…"
+    /// Số gói nhận được từ CCU qua BLE (mọi đặc tính), để biết CCU có "nói" hay không.
+    @Published private(set) var framesReceived = 0
     /// Mỗi bước đều gọi hàm này (app hiện trong log).
     var onLog: ((String) -> Void)?
 
     static let pollInterval: TimeInterval = 10
     static let ddtTimeout: TimeInterval = 5
+    /// Lần đầu iOS có thể hiện hộp ghép đôi khi đọc đặc tính: cho lâu hơn.
+    static let authTimeout: TimeInterval = 20
 
     // MFi
     private var ea: EASession?
@@ -50,6 +55,29 @@ final class CCULink: NSObject, ObservableObject {
     private var timer: Timer?
     private var started = false
 
+    // Trạng thái hiển thị
+    private var stage = "đang kết nối…"
+    private var stageTimed = false
+    private var stageFrames = false
+    private var stageSince = Date()
+    private var authSentAt = Date()
+    private var authAttempts = 0
+    private var probing = false
+    private var authedAt: Date?
+    private var diagLogged = 0
+    private var ecuAsks = 0
+    private var pingCount = 0
+    private var lastNotifyStep = Date()
+    private var lastMFiRetry = Date.distantPast
+    private var lastBLETry = Date.distantPast
+    private var connectRequestedAt = Date()
+    private var connectedAt = Date()
+    private var gotConnected = false
+    private var accessorySignature = ""
+    private var btState: CBManagerState = .unknown
+    /// ECU đã thấy trên xe thử nghiệm (tài liệu); chỉ dùng thử khi xe không trả lời danh sách ECU.
+    static let guessECU: UInt64 = 1248
+
     private let serviceUUID = CBUUID(string: CCUUUID.service)
 
     func start() {
@@ -64,6 +92,7 @@ final class CCULink: NSObject, ObservableObject {
             Task { @MainActor in self?.tick() }
         }
         log("B: bắt đầu")
+        lastMFiRetry = Date()
         openMFi()
     }
 
@@ -73,9 +102,40 @@ final class CCULink: NSObject, ObservableObject {
         onLog?(text)
     }
 
-    private func setStatus(_ text: String) {
-        if status != text { status = text }
-        log("B: \(text)")
+    /// Đổi bước hiện tại. `timed`: hiện số giây đã chờ; `frames`: kèm số gói đã nhận.
+    private func setStatus(_ text: String, timed: Bool = false, frames: Bool = false) {
+        if stage == text && stageTimed == timed && stageFrames == frames { return }
+        stage = text
+        stageTimed = timed
+        stageFrames = frames
+        stageSince = Date()
+        log("B: trạng thái: \(text)")
+        publishStatus()
+    }
+
+    private func publishStatus() {
+        var s = "Dữ liệu xe: " + stage
+        if stageTimed { s += " (\(Int(Date().timeIntervalSince(stageSince))) s)" }
+        if stageFrames { s += " · nhận \(framesReceived) gói" }
+        if status != s { status = s }
+    }
+
+    private func hx(_ b: [UInt8]) -> String {
+        b.prefix(64).hex + (b.count > 64 ? " …(\(b.count) B)" : "")
+    }
+
+    private func charName(_ key: String) -> String {
+        switch key {
+        case CCUUUID.cmdNotify: return "CMD"
+        case CCUUUID.cmdWrite: return "CMD-ghi"
+        case CCUUUID.ddtSendHandshake: return "DDT-bắt-tay"
+        case CCUUUID.ddtSendControl: return "DDT-mở/đóng"
+        case CCUUUID.ddtSendChunk: return "DDT-mẩu-gửi"
+        case CCUUUID.ddtRecvAnnounce: return "DDT-báo-gói"
+        case CCUUUID.ddtRecvChunk: return "DDT-mẩu-nhận"
+        case CCUUUID.ddtV2Recv: return "DDT-V2"
+        default: return key.hasPrefix(CCUUUID.ddtRecvAckPrefix) ? "DDT-ack" : key
+        }
     }
 
     private func nextSeq() -> UInt8 {
@@ -87,18 +147,83 @@ final class CCULink: NSObject, ObservableObject {
 
     private func tick() {
         let now = Date()
-        // Hỏi lại passkey nếu chưa có trả lời (tối đa 5 lần mỗi phiên)
-        if ea != nil, credentials == nil, let t = askedAt, now.timeIntervalSince(t) > 3, askCount < 5 {
-            log("B: chưa có passkey, hỏi lại")
-            askPasskey()
+        // Chưa có phiên MFi (phụ kiện chỉ hiện sau khi nối đồng hồ, hoặc mở lỗi): thử lại mỗi 3 s
+        if ea == nil, now.timeIntervalSince(lastMFiRetry) >= 3 {
+            lastMFiRetry = now
+            openMFi()
         }
-        if peripheral == nil { tryBLE() }
-        if sender != nil, now.timeIntervalSince(senderStartedAt) > Self.ddtTimeout {
-            driveSender(.error("quá \(Int(Self.ddtTimeout)) s"))
+        // Hỏi lại passkey nếu chưa có trả lời; hết 5 lần thì đóng mở lại phiên
+        if ea != nil, credentials == nil, let t = askedAt, now.timeIntervalSince(t) > 3 {
+            if askCount < 5 {
+                log("B: chưa có passkey, hỏi lại (lần \(askCount + 1))")
+                askPasskey()
+            } else if now.timeIntervalSince(t) > 6 {
+                closeMFi("MFi không trả lời, mở lại phiên")
+            }
         }
-        if authed, now.timeIntervalSince(lastPoll) >= Self.pollInterval {
+        if peripheral == nil, now.timeIntervalSince(lastBLETry) >= 2 {
+            lastBLETry = now
+            tryBLE()
+        }
+        // iOS không báo didConnect khi CCU đã nối sẵn với hệ thống: tự coi như đã nối
+        if let p = peripheral, p.state == .connected, !gotConnected, now.timeIntervalSince(connectRequestedAt) > 3 {
+            log("B: iOS báo đã nối nhưng chưa có didConnect, tự dò dịch vụ")
+            handleConnected(p)
+        }
+        // Dò dịch vụ không có kết quả
+        if let p = peripheral, p.state == .connected, gotConnected, chars.isEmpty, now.timeIntervalSince(connectedAt) > 10 {
+            connectedAt = now
+            log("B: 10 s chưa thấy đặc tính, dò lại dịch vụ")
+            p.discoverServices([serviceUUID])
+        }
+        // Bật notify bị kẹt (callback không bao giờ tới): bỏ đặc tính đó, làm tiếp
+        if !notifyQueue.isEmpty, now.timeIntervalSince(lastNotifyStep) > 4 {
+            let c = notifyQueue.removeFirst()
+            log("B: bật notify \(charName(c.uuid.uuidString.uppercased())) quá 4 s, bỏ qua")
+            enableNextNotify()
+        }
+        let limit = senderLabel == "AuthenticationV2" ? Self.authTimeout : Self.ddtTimeout
+        if sender != nil, now.timeIntervalSince(senderStartedAt) > limit {
+            driveSender(.error("quá \(Int(limit)) s"))
+        }
+        // Xác thực không có kết quả: gửi lại; sau 2 lần vẫn hỏi thử dữ liệu
+        if authSent, !authed, sender == nil, sendQueue.isEmpty, now.timeIntervalSince(authSentAt) > 10 {
+            retryAuth()
+        }
+        if (authed || probing), now.timeIntervalSince(lastPoll) >= Self.pollInterval {
             poll()
         }
+        diagnose(now)
+        publishStatus()
+    }
+
+    /// Ghi vào log vì sao chưa có dữ liệu (một lần ở mốc 15, 30, 60 s sau khi xác thực).
+    private func diagnose(_ now: Date) {
+        guard let t = authedAt, data.coolantC == nil || data.batteryV == nil || data.odoKm == nil else { return }
+        let marks: [TimeInterval] = [15, 30, 60]
+        guard diagLogged < marks.count, now.timeIntervalSince(t) >= marks[diagLogged] else { return }
+        diagLogged += 1
+        log("B: \(Int(marks[diagLogged - 1])) s sau xác thực vẫn thiếu dữ liệu: nhận \(framesReceived) gói, ECU \(ecuIds), "
+            + "hàng đợi \(sendQueue.count), đang gửi \(sender != nil ? senderLabel : "không"), "
+            + "ODO \(data.odoKm != nil) pin \(data.batteryV != nil) nước \(data.coolantC != nil)")
+    }
+
+    private func retryAuth() {
+        guard let cred = credentials, peripheral != nil else { return }
+        authAttempts += 1
+        if authAttempts >= 3 && !probing {
+            probing = true
+            log("B: chưa thấy 01 02 01 sau \(authAttempts) lần, vẫn thử hỏi dữ liệu")
+            poll()
+        }
+        if authAttempts > 8 {
+            setStatus("CCU không trả lời xác thực")
+            return
+        }
+        log("B: gửi lại xác thực (lần \(authAttempts + 1))")
+        authSentAt = Date()
+        enqueueDDT(CCUCommand.authenticationV2(code: cred.code, passkey: cred.passkey), label: "AuthenticationV2")
+        setStatus("đang xác thực CCU", timed: true)
     }
 
     // MARK: - MFi
@@ -116,10 +241,18 @@ final class CCULink: NSObject, ObservableObject {
     private func openMFi() {
         guard ea == nil else { return }
         let accessories = EAAccessoryManager.shared().connectedAccessories
-        guard let acc = accessories.first(where: { $0.protocolStrings.contains(CCUUUID.mfiProtocol) }) else { return }
+        let sig = accessories.map { "\($0.name) [\($0.protocolStrings.joined(separator: ","))]" }.joined(separator: "; ")
+        if sig != accessorySignature {
+            accessorySignature = sig
+            log("B: phụ kiện MFi hiện có: \(sig.isEmpty ? "(không có)" : sig)")
+        }
+        guard let acc = accessories.first(where: { $0.protocolStrings.contains(CCUUUID.mfiProtocol) }) else {
+            if credentials == nil { setStatus("chưa thấy bộ CCU") }
+            return
+        }
         log("B: thấy MFi \(acc.name) · \(acc.protocolStrings.joined(separator: ", "))")
         guard let s = EASession(accessory: acc, forProtocol: CCUUUID.mfiProtocol) else {
-            setStatus("Không mở được MFi CCU. Tắt app Y-Connect?")
+            setStatus("không mở được kết nối CCU (tắt app Y-Connect?)")
             return
         }
         ea = s
@@ -132,15 +265,15 @@ final class CCULink: NSObject, ObservableObject {
             stream.schedule(in: .main, forMode: .default)
             stream.open()
         }
+        if credentials == nil { setStatus("đang hỏi mã CCU", timed: true) }
         askPasskey()
-        setStatus("Đang hỏi mã CCU…")
     }
 
     private func askPasskey() {
         askedAt = Date()
         askCount += 1
         let bytes = CCUMFiFrame.askPasskey.encoded()
-        log("B: MFi → \(bytes.hex)")
+        log("B: MFi → hỏi mã CCU [\(bytes.hex)] (lần \(askCount))")
         mfiOut += bytes
         flushMFi()
     }
@@ -165,12 +298,16 @@ final class CCULink: NSObject, ObservableObject {
                 if let p = CCUPasskey(answer: frame) {
                     let isNew = credentials != p
                     credentials = p
-                    log("B: mã CCU \(p.code), đã có passkey")
-                    if isNew || peripheral == nil {
-                        setStatus("Có mã CCU, đang tìm BLE…")
+                    log("B: MFi ← mã CCU \(p.code), đã có passkey\(isNew ? "" : " (như cũ)")")
+                    if peripheral == nil { setStatus("đang tìm CCU qua Bluetooth", timed: true) }
+                    if peripheral != nil, notifyQueue.isEmpty, !chars.isEmpty, isNew || !authSent {
+                        // Passkey đổi (xe tắt mở lại) hoặc vừa hỏi lại sau khi bị từ chối: xác thực lại
+                        authSent = false
+                        authed = false
+                        notificationsReady()
                     }
                     tryBLE()
-                } else if mfiFramesLogged < 20 {
+                } else if mfiFramesLogged < 40 {
                     mfiFramesLogged += 1
                     log("B: MFi ← \(frame)")
                 }
@@ -195,6 +332,7 @@ final class CCULink: NSObject, ObservableObject {
 
     private func tryBLE() {
         guard let c = central, c.state == .poweredOn, let cred = credentials, peripheral == nil else { return }
+        if stage == "chưa thấy bộ CCU" || stage == "đang hỏi mã CCU" { setStatus("đang tìm CCU qua Bluetooth", timed: true) }
         let wanted = CCUUUID.namePrefix + cred.code
         let known = c.retrieveConnectedPeripherals(withServices: [serviceUUID])
         if let p = known.first(where: { $0.name == wanted }) ?? known.first {
@@ -206,6 +344,7 @@ final class CCULink: NSObject, ObservableObject {
             scanning = true
             c.scanForPeripherals(withServices: nil, options: nil)
             log("B: quét tìm \(wanted)")
+            setStatus("đang tìm CCU qua Bluetooth", timed: true)
         }
     }
 
@@ -216,9 +355,12 @@ final class CCULink: NSObject, ObservableObject {
             scanning = false
         }
         peripheral = p
+        gotConnected = false
+        connectRequestedAt = Date()
         p.delegate = self
         c.connect(p, options: nil)
-        setStatus("Đang nối BLE \(p.name ?? "CCU")…")
+        log("B: nối BLE, trạng thái iOS \(p.state.rawValue)")
+        setStatus("đang nối Bluetooth CCU", timed: true)
     }
 
     private func resetLink() {
@@ -227,6 +369,11 @@ final class CCULink: NSObject, ObservableObject {
         notifyQueue = []
         authed = false
         authSent = false
+        authedAt = nil
+        authAttempts = 0
+        probing = false
+        diagLogged = 0
+        ecuAsks = 0
         sender = nil
         sendQueue = []
         v1rx = DDTV1Receiver()
@@ -234,12 +381,13 @@ final class CCULink: NSObject, ObservableObject {
     }
 
     fileprivate func handleState(_ state: CBManagerState) {
+        btState = state
         switch state {
         case .poweredOn:
             log("B: Bluetooth bật")
             tryBLE()
         case .unauthorized:
-            setStatus("Chưa cho phép Bluetooth")
+            setStatus("chưa cho phép Bluetooth (vào Cài đặt iPhone)")
         case .poweredOff:
             setStatus("Bluetooth đang tắt")
             scanning = false
@@ -261,23 +409,29 @@ final class CCULink: NSObject, ObservableObject {
     fileprivate func handleConnected(_ p: CBPeripheral) {
         guard p === peripheral else { return }
         resetLink()
+        gotConnected = true
+        connectedAt = Date()
         log("B: BLE đã nối, ghi tối đa \(p.maximumWriteValueLength(for: .withResponse)) B")
         p.discoverServices([serviceUUID])
-        setStatus("Đang dò dịch vụ CCU…")
+        setStatus("đang dò dịch vụ CCU", timed: true)
     }
 
     fileprivate func handleFailedConnect(_ p: CBPeripheral, error: String) {
         guard p === peripheral else { return }
         log("B: nối BLE lỗi: \(error)")
         peripheral = nil
-        setStatus("Nối BLE CCU lỗi, thử lại…")
+        gotConnected = false
+        setStatus("nối Bluetooth CCU lỗi, đang thử lại")
     }
 
     fileprivate func handleDisconnected(_ p: CBPeripheral, error: String) {
         guard p === peripheral else { return }
         resetLink()
-        setStatus(data.ignitionOn == false ? "Đã tắt khoá, chờ xe…" : "Mất BLE CCU, chờ xe…")
+        gotConnected = false
+        setStatus(data.ignitionOn == false ? "xe đã tắt khoá điện, chờ xe bật lại" : "mất kết nối CCU, đang nối lại")
         log("B: BLE ngắt \(error)")
+        // Passkey có thể đổi sau mỗi lần xe tắt mở: hỏi lại qua MFi
+        if ea != nil { askPasskey() }
         // Lệnh connect của iOS không hết hạn: tự nối lại khi xe bật lại
         central?.connect(p, options: nil)
     }
@@ -287,7 +441,7 @@ final class CCULink: NSObject, ObservableObject {
     fileprivate func handleServices(_ p: CBPeripheral, error: String?) {
         if let e = error { log("B: dò dịch vụ lỗi: \(e)") }
         guard let s = p.services?.first(where: { $0.uuid == serviceUUID }) else {
-            setStatus("Không thấy dịch vụ CCU")
+            setStatus("CCU không có dịch vụ dữ liệu")
             return
         }
         p.discoverCharacteristics(nil, for: s)
@@ -305,6 +459,7 @@ final class CCULink: NSObject, ObservableObject {
         let notifyUUIDs: [String] = [CCUUUID.cmdNotify, CCUUUID.ddtSendHandshake, CCUUUID.ddtRecvAnnounce,
                                      CCUUUID.ddtRecvChunk, CCUUUID.ddtV2Recv]
         notifyQueue = []
+        setStatus("đang bật thông báo CCU", timed: true)
         for u in notifyUUIDs {
             guard let c = chars[u] else {
                 log("B: thiếu đặc tính \(u)")
@@ -322,8 +477,9 @@ final class CCULink: NSObject, ObservableObject {
     /// Bật notify từng đặc tính một: chờ callback rồi mới bật cái kế.
     private func enableNextNotify() {
         guard let p = peripheral else { return }
+        lastNotifyStep = Date()
         if let c = notifyQueue.first {
-            log("B: bật notify \(c.uuid.uuidString)")
+            log("B: bật notify \(charName(c.uuid.uuidString.uppercased()))")
             p.setNotifyValue(true, for: c)
         } else {
             notificationsReady()
@@ -350,26 +506,31 @@ final class CCULink: NSObject, ObservableObject {
             return
         }
         authSent = true
+        authSentAt = Date()
         writeCmd(CCUCommand.connectAppId(seq: nextSeq()), label: "ConnectAppId")
         enqueueDDT(CCUCommand.authenticationV2(code: cred.code, passkey: cred.passkey), label: "AuthenticationV2")
-        setStatus("Đang xác thực CCU…")
+        setStatus("đang xác thực CCU", timed: true)
     }
 
     // MARK: - BLE: ghi
 
-    private func write(_ bytes: [UInt8], to c: CBCharacteristic, label: String) {
+    private func write(_ bytes: [UInt8], to c: CBCharacteristic, label: String, quiet: Bool = false) {
         guard let p = peripheral else { return }
         let type: CBCharacteristicWriteType = c.properties.contains(.write) ? .withResponse : .withoutResponse
-        log("B: → \(label) [\(bytes.prefix(24).hex)\(bytes.count > 24 ? " …(\(bytes.count) B)" : "")]")
+        if !quiet {
+            // Gói xác thực chứa passkey: không ghi nội dung vào log
+            let body = label.contains("AuthenticationV2") ? "\(bytes.count) B, ẩn passkey" : hx(bytes)
+            log("B: → \(charName(c.uuid.uuidString.uppercased())) \(label) [\(body)]")
+        }
         p.writeValue(Data(bytes), for: c, type: type)
     }
 
-    private func writeCmd(_ bytes: [UInt8], label: String) {
+    private func writeCmd(_ bytes: [UInt8], label: String, quiet: Bool = false) {
         guard let c = chars[CCUUUID.cmdWrite] else {
             log("B: thiếu đặc tính CMD write, bỏ \(label)")
             return
         }
-        write(bytes, to: c, label: label)
+        write(bytes, to: c, label: label, quiet: quiet)
     }
 
     // MARK: - DDT V1 gửi
@@ -453,6 +614,13 @@ final class CCULink: NSObject, ObservableObject {
 
     fileprivate func handleValue(_ c: CBCharacteristic, bytes: [UInt8], error: String?) {
         let key = c.uuid.uuidString.uppercased()
+        if error == nil {
+            framesReceived += 1
+            let isPing = key == CCUUUID.cmdNotify && bytes.count >= 2 && bytes[0] == 0x01 && bytes[1] == 0x35
+            if !isPing || pingCount < 3 {
+                log("B: ← \(charName(key)) [\(hx(bytes))]")
+            }
+        }
         if let e = error {
             log("B: đọc \(key) lỗi: \(e)")
             if key == CCUUUID.ddtSendHandshake, sender?.state == .readingHandshake {
@@ -465,13 +633,11 @@ final class CCULink: NSObject, ObservableObject {
             if sender?.state == .readingHandshake {
                 driveSender(.handshakeRead)
             } else {
-                log("B: ← bắt tay DDT [\(bytes.hex)]")
                 driveSender(.handshakeNotify(bytes))
             }
         case CCUUUID.cmdNotify:
             handleCmd(bytes)
         case CCUUUID.ddtRecvAnnounce:
-            log("B: ← DDT báo gói [\(bytes.hex)]")
             if let ack = v1rx.announce(bytes) {
                 if let a = ackChar {
                     write(ack, to: a, label: "DDT ack")
@@ -484,7 +650,7 @@ final class CCULink: NSObject, ObservableObject {
         case CCUUUID.ddtV2Recv:
             if let packet = v2rx.append(bytes) { handlePacket(packet, via: "V2") }
         default:
-            log("B: ← \(key) [\(bytes.prefix(24).hex)]")
+            break
         }
     }
 
@@ -492,59 +658,75 @@ final class CCULink: NSObject, ObservableObject {
         guard let m = CCUMessage(bytes) else { return }
         switch m {
         case .ping:
-            if let reply = CCUCommand.pingReply(to: bytes) { writeCmd(reply, label: "ping 310") }
+            pingCount += 1
+            if let reply = CCUCommand.pingReply(to: bytes) { writeCmd(reply, label: "ping 310", quiet: pingCount > 3) }
         case .authResult(let ok):
-            log("B: ← xác thực [\(bytes.hex)]")
+            log("B: xác thực \(ok ? "được chấp nhận" : "bị từ chối")")
             authed = ok
             if ok {
-                setStatus("CCU đã xác thực")
+                authedAt = Date()
+                probing = false
+                setStatus("đang chờ phản hồi", timed: true, frames: true)
                 poll()
             } else {
-                setStatus("CCU từ chối xác thực")
+                setStatus("CCU từ chối mã xác thực, đang hỏi lại mã")
+                authSent = false
+                credentials = nil
+                askCount = 0
+                askPasskey()
             }
         case .ignition(let on):
-            log("B: ← khoá điện \(on ? "bật" : "tắt")")
+            log("B: khoá điện \(on ? "bật" : "tắt")")
             data.ignitionOn = on
-            if !on { setStatus("Đã tắt khoá điện") }
+            if !on { setStatus("xe đã tắt khoá điện") }
         case .fuelCounter(let counter):
             let used = fuel.update(counter: counter)
-            log("B: ← bộ đếm xăng \(counter) → \(String(format: "%.3f", used)) L")
+            log("B: bộ đếm xăng \(counter) → \(String(format: "%.3f", used)) L")
             data.fuelUsedL = used
         case .askTime:
-            log("B: ← xe hỏi giờ")
+            log("B: xe hỏi giờ")
             writeCmd(CCUCommand.time(seq: nextSeq(), date: Date()), label: "giờ")
         case .askLanguage:
-            log("B: ← xe hỏi ngôn ngữ")
+            log("B: xe hỏi ngôn ngữ")
             writeCmd(CCUCommand.language(seq: nextSeq(), lang: CCUCommand.languageVietnamese), label: "ngôn ngữ")
-        case .other(let cmd, _):
-            log("B: ← cmd \(cmd) [\(bytes.prefix(24).hex)]")
+        case .other:
+            break
         }
     }
 
     private func handlePacket(_ packet: [UInt8], via: String) {
         let cmd = ccuCommand(of: packet) ?? 0
+        log("B: gói đầy đủ \(cmd) (\(via)) \(packet.count) B [\(hx(packet))]")
         switch cmd {
         case 260:
             let ids = CCUVehicle.ecuIds(answer260: packet)
-            log("B: ← ECU \(ids.map { String($0) }.joined(separator: ", ")) (\(via))")
+            log("B: ECU \(ids.map { String($0) }.joined(separator: ", "))")
             if !ids.isEmpty {
                 let first = ecuIds.isEmpty
                 ecuIds = ids
-                if first, let ecu = ids.first, authed {
+                if first, let ecu = ids.first, authed || probing {
                     enqueueDDT(CCUCommand.vehicleDataRequest(ecu: ecu), label: "270 ECU \(ecu)")
                 }
             }
         case 271:
+            let params = CCUVehicle.params(answer271: packet)
+            log("B: 271 có \(params.count) tham số: "
+                + params.map { "#\($0.id)=\($0.raw.count) B" }.joined(separator: ", "))
             let d = CCUVehicle.decode271(packet)
             var parts: [String] = []
             if let v = d.odoKm { parts.append(String(format: "ODO %.1f km", v)) }
             if let v = d.batteryV { parts.append(String(format: "%.2f V", v)) }
             if let v = d.coolantC { parts.append("\(v) °C") }
             if let v = d.rpm { parts.append("\(v) v/ph") }
-            log("B: ← dữ liệu xe (\(via)): \(parts.isEmpty ? packet.prefix(32).hex : parts.joined(separator: " · "))")
+            log("B: dữ liệu xe: \(parts.isEmpty ? "không đọc được thông số nào" : parts.joined(separator: " · "))")
             data.merge(d)
+            if parts.isEmpty {
+                setStatus("xe trả lời nhưng chưa đọc được thông số", frames: true)
+            } else {
+                setStatus("đã nhận dữ liệu xe")
+            }
         default:
-            log("B: ← gói \(cmd) (\(via)) \(packet.count) B [\(packet.prefix(32).hex)]")
+            break
         }
     }
 
@@ -552,11 +734,18 @@ final class CCULink: NSObject, ObservableObject {
 
     private func poll() {
         lastPoll = Date()
-        guard authed, let p = peripheral, p.state == .connected else { return }
+        guard authed || probing, let p = peripheral, p.state == .connected else { return }
         writeCmd(CCUCommand.ignitionRequest, label: "khoá điện 311")
+        let pending270 = sendQueue.contains(where: { $0.label.hasPrefix("270") }) || (sender != nil && senderLabel.hasPrefix("270"))
         if ecuIds.isEmpty {
-            writeCmd(CCUCommand.ecuListRequest, label: "danh sách ECU 259")
-        } else if let ecu = ecuIds.first, !sendQueue.contains(where: { $0.label.hasPrefix("270") }) {
+            ecuAsks += 1
+            writeCmd(CCUCommand.ecuListRequest, label: "danh sách ECU 259 (lần \(ecuAsks))")
+            // Xe không trả lời danh sách ECU: thử luôn ECU đã thấy trên xe thử nghiệm
+            if ecuAsks >= 3, !pending270 {
+                log("B: chưa có danh sách ECU, thử ECU \(Self.guessECU) (giá trị đoán theo tài liệu)")
+                enqueueDDT(CCUCommand.vehicleDataRequest(ecu: Self.guessECU), label: "270 ECU \(Self.guessECU) (đoán)")
+            }
+        } else if let ecu = ecuIds.first, !pending270 {
             enqueueDDT(CCUCommand.vehicleDataRequest(ecu: ecu), label: "270 ECU \(ecu)")
         }
         writeCmd(CCUCommand.fuelRequest, label: "xăng 287")

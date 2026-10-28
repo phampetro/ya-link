@@ -28,7 +28,7 @@ struct NavTab: View {
                 GroupFoot("Trong Google Maps chọn địa điểm › Chia sẻ › Ya Link.")
                 GroupTitle("Địa điểm đã lưu")
                 places
-                GroupFoot("Sao chép link Google Maps rồi bấm “Đặt … từ link”. Giữ Enter khi bản đồ đang mở để đi nhanh tới các nơi này.")
+                GroupFoot("Chạm một nơi để đi ngay. Thêm nơi mới: sao chép link Google Maps rồi bấm “Đặt … từ link”.")
                 GroupTitle("Vị trí")
                 locationRow
             }
@@ -134,7 +134,7 @@ struct NavTab: View {
             slotRow(.work, place: p.work, color: .purple, emptyTitle: "Đặt công ty từ link")
             ForEach(Array(p.favs.enumerated()), id: \.offset) { i, f in
                 RowSeparator(inset: 58)
-                savedRow(title: f.name, sub: f.sub.isEmpty ? Fmt.coords(f.lat, f.lon) : f.sub, color: .orange) {
+                savedRow(title: f.name, sub: f.sub.isEmpty ? Fmt.coords(f.lat, f.lon) : f.sub, color: .orange, go: go(f)) {
                     settings.removeFavourite(at: i)
                     toaster.show("Đã xoá")
                 }
@@ -146,7 +146,7 @@ struct NavTab: View {
 
     @ViewBuilder private func slotRow(_ slot: PlaceSlot, place: SavedPlace?, color: TileColor, emptyTitle: String) -> some View {
         if let pl = place {
-            savedRow(title: slot.label, sub: pl.sub.isEmpty ? pl.name : "\(pl.name) · \(pl.sub)", color: color) {
+            savedRow(title: slot.label, sub: pl.sub.isEmpty ? pl.name : "\(pl.name) · \(pl.sub)", color: color, go: go(pl)) {
                 settings.removePlace(slot)
                 toaster.show("Đã xoá")
             }
@@ -155,13 +155,29 @@ struct NavTab: View {
         }
     }
 
-    private func savedRow(title: String, sub: String, color: TileColor, onDelete: @escaping () -> Void) -> some View {
-        Row(title, subtitle: sub, icon: (Sym.pin, color)) {
-            Button("Xoá", action: onDelete)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(Theme.red)
-                .buttonStyle(.plain)
+    /// Chạm vào một nơi đã lưu: bắt đầu đi luôn (Xoá nằm riêng bên phải).
+    private func go(_ place: SavedPlace) -> () -> Void {
+        {
+            nav.navigate(to: place)
+            toaster.show("Đi tới \(place.name)")
         }
+    }
+
+    private func savedRow(title: String, sub: String, color: TileColor, go: @escaping () -> Void, onDelete: @escaping () -> Void) -> some View {
+        Row(title, subtitle: sub, icon: (Sym.pin, color)) {
+            HStack(spacing: 14) {
+                Button("Đi", action: go)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(Theme.blue)
+                    .buttonStyle(.plain)
+                Button("Xoá", action: onDelete)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Theme.red)
+                    .buttonStyle(.plain)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: go)
     }
 
     private func add(_ slot: PlaceSlot) {
@@ -203,6 +219,7 @@ struct NavTab: View {
 /// Bảng xác nhận điểm đến: "Đến đây?" (bắt đầu / lưu Nhà, Công ty, Yêu thích) hoặc "Lưu địa điểm này?" (luồng thêm).
 struct ConfirmSheet: View {
     @ObservedObject var nav: NavigationController
+    @State private var name = ""
 
     var body: some View {
         Group {
@@ -213,7 +230,8 @@ struct ConfirmSheet: View {
             }
         }
         .background(Theme.Background())
-        .presentationDetents([.height(nav.pendingSlot == nil ? 410 : 350)])
+        .onChange(of: nav.state) { _ in name = "" }
+        .presentationDetents([.height(nav.pendingSlot == nil ? 470 : 410)])
         .presentationDragIndicator(.visible)
     }
 
@@ -222,6 +240,12 @@ struct ConfirmSheet: View {
             Text(nav.pendingSlot == nil ? "Đến đây?" : "Lưu địa điểm này?")
                 .font(.system(size: 22, weight: .bold)).foregroundColor(Theme.text)
             Text(p.name).font(.system(size: 19)).foregroundColor(Theme.text)
+            TextField("Tên gợi nhớ (không bắt buộc)", text: $name)
+                .font(.system(size: 16))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.fill))
+                .submitLabel(.done)
             Text(Fmt.coords(p.point.lat, p.point.lon))
                 .font(.system(size: 13, design: .monospaced)).foregroundColor(Theme.sec)
             Text("Link Google Maps đôi khi đọc sai địa điểm. Kiểm tra tên và toạ độ trước khi tiếp tục.")
@@ -231,13 +255,13 @@ struct ConfirmSheet: View {
             if let slot = nav.pendingSlot {
                 HStack(spacing: 8) {
                     Button("Huỷ") { nav.cancelPending() }.buttonStyle(.pill)
-                    Button("Lưu làm \(slot.label)") { nav.savePending(as: slot) }.buttonStyle(.pillProminent)
+                    Button("Lưu làm \(slot.label)") { nav.savePending(as: slot, name: name) }.buttonStyle(.pillProminent)
                 }
             } else {
                 HStack(spacing: 8) {
-                    Button("Lưu Nhà") { nav.savePending(as: .home) }.buttonStyle(.pill)
-                    Button("Lưu Công ty") { nav.savePending(as: .work) }.buttonStyle(.pill)
-                    Button("Yêu thích") { nav.savePending(as: .fav) }.buttonStyle(.pill)
+                    Button("Lưu Nhà") { nav.savePending(as: .home, name: name) }.buttonStyle(.pill)
+                    Button("Lưu Công ty") { nav.savePending(as: .work, name: name) }.buttonStyle(.pill)
+                    Button("Yêu thích") { nav.savePending(as: .fav, name: name) }.buttonStyle(.pill)
                 }
                 HStack(spacing: 8) {
                     Button("Huỷ") { nav.cancelPending() }.buttonStyle(.pill)

@@ -17,6 +17,11 @@ public final class LinkASession {
         case buttonUp, buttonDown
         case speed(Int)
         case ack(id: UInt16, roundTripMs: Int?)
+        /// Menu gốc của đồng hồ (Enter / giữ Enter không bao giờ tới điện thoại, xem docs).
+        case goHome, goWork, stopRoute
+        case listOpened(Int)          // 55 03 / 04
+        case listClosed(Int)          // 56 03 / 04
+        case listSelected(index: Int, listId: Int, option: Int)   // 48
         case other(BikeMessage)
     }
 
@@ -38,6 +43,8 @@ public final class LinkASession {
     public private(set) var initSent = false
     /// true sau 55, false sau 56: chỉ được gửi khung hình khi true.
     public private(set) var showing = false
+    /// Danh sách gốc của đồng hồ đang mở (3 yêu thích, 4 trạm xăng), nil khi không.
+    public private(set) var openListId: Int?
 
     private var seenChallenge = false
     private var firstAuthAt: TimeInterval?
@@ -75,8 +82,27 @@ public final class LinkASession {
                 r.events = [.authenticated(partNumber: partNumber ?? "", width: screen.width, height: screen.height)]
             }
 
+        case .openList(let k):
+            openListId = Int(k)
+            // Đang dẫn đường thì báo "không dẫn đường" để đồng hồ hiện danh sách
+            if navigating { r.send = [PhoneCommand.navigationState(navigating: false)] }
+            r.events = [.listOpened(Int(k))]
+
+        case .closeList(let k):
+            openListId = nil
+            if navigating { r.send = [PhoneCommand.navigationState(navigating: true)] }
+            r.events = [.listClosed(Int(k))]
+
+        case .listEnter(let index, let listId, let option):
+            r.events = [.listSelected(index: Int(index), listId: Int(listId), option: Int(option))]
+
+        case .goHome: r.events = [.goHome]
+        case .goWork: r.events = [.goWork]
+        case .stopRoute: r.events = [.stopRoute]
+
         case .showFrames:
             showing = true
+            openListId = nil
             inFlight = nil
             r.send = [PhoneCommand.navigationState(navigating: navigating), PhoneCommand.rearmButtons,
                       PhoneCommand.showFramesReply, PhoneCommand.bottomBar(bottomBarText),
@@ -85,6 +111,7 @@ public final class LinkASession {
 
         case .pause:
             showing = false
+            openListId = nil
             inFlight = nil
             r.send = [PhoneCommand.pauseAck]
             r.events = [.pause]
@@ -139,6 +166,19 @@ public final class LinkASession {
         nextFrameId = nextFrameId == UInt16.max ? 1 : nextFrameId + 1
         inFlight = (id, now)
         return PhoneCommand.mapFrame(jpeg: jpeg, frameId: id, mode: mode)
+    }
+
+    /// Cập nhật cờ Nhà / Công ty đã lưu. Trả về khung 10 / 11 cần gửi ngay (rỗng nếu chưa init hoặc không đổi).
+    /// Mỗi lần 55 và trong init, cờ vẫn được gửi lại như tài liệu.
+    public func setSaved(home: Bool, work: Bool) -> [Frame] {
+        let homeChanged = home != homeSaved, workChanged = work != workSaved
+        homeSaved = home
+        workSaved = work
+        guard initSent else { return [] }
+        var out: [Frame] = []
+        if homeChanged { out.append(PhoneCommand.homeSaved(home)) }
+        if workChanged { out.append(PhoneCommand.workSaved(work)) }
+        return out
     }
 
     /// Chuỗi init sau bắt tay, đúng thứ tự trong tài liệu.

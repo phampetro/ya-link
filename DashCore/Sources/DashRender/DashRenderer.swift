@@ -26,7 +26,7 @@ public struct DashRenderer {
     static let bad = RGB(224, 32, 27)
     static let wheelCenterY: CGFloat = 108
     static let wheelRadius: CGFloat = 53
-    static let panelColor = RGB(30, 35, 45)       // nền ô hướng rẽ / giờ đến / menu (kính tối, phẳng)
+    static let panelColor = RGB(30, 35, 45)       // nền ô hướng rẽ / giờ đến (kính tối, phẳng)
     static let mutedText = RGB(224, 224, 224)
 
     public init() {}
@@ -62,11 +62,7 @@ public struct DashRenderer {
             case .home: drawHome(c, ui, pc: pc, slide: Self.ramp(since, 0.3, 0.7))
             case .music: drawMusic(c, ui, pc: pc, now: now)
             case .map:
-                if ui.mapOpen {
-                    drawMapOpen(c, ui, pc: pc, date: input.date, map: input.map)
-                } else {
-                    drawMapCover(c, ui, pc: pc, date: input.date)
-                }
+                drawMapOpen(c, ui, pc: pc, date: input.date, map: input.map)
             }
             // Màn chào mờ đi trong 0,5 s đầu sau khi hết (chỉ khi có chào)
             if page == .home, ui.greetingEnabled, ui.welcomeStart != nil, let s = since, s < 0.5 {
@@ -295,30 +291,6 @@ public struct DashRenderer {
 
     // MARK: - Bản đồ
 
-    /// Màn bìa (chưa bấm Enter): ô icon + chữ, nằm trên ảnh nền tối ngả màu trang.
-    private func drawMapCover(_ c: Canvas, _ ui: DashUI, pc: RGB, date: Date) {
-        c.fill(CGRect(x: 0, y: 0, width: c.width, height: c.height), RGB.black.cg(0.55))
-        c.fill(CGRect(x: 0, y: 0, width: c.width, height: c.height), pc.cg(0.12))
-        let tile = CGRect(x: 70, y: 51, width: 84, height: 84)
-        for i in 1...4 {   // ánh sáng quanh ô
-            c.fill(tile.insetBy(dx: CGFloat(-3 * i), dy: CGFloat(-3 * i)), pc.cg(0.1), radius: 24 + CGFloat(3 * i))
-        }
-        c.fill(tile, pc.cg(), radius: 24)
-        c.stroke(tile.insetBy(dx: 0.5, dy: 0.5), RGB.white.cg(0.3), width: 1, radius: 23.5)
-        c.inBox(48, tile.insetBy(dx: 14, dy: 14)) { Icons.foldedMap(c, line: pc.cg()) }
-
-        let x: CGFloat = 170, maxW: CGFloat = 244
-        c.text("Bản đồ", x: x, y: Self.lineY(39, 32, 28), size: 28, weight: .semibold, color: RGB.white.cg())
-        var l1 = "Chưa chỉ đường", l2 = "Chia sẻ địa điểm từ Google Maps"
-        if let n = ui.nav {
-            l1 = "Tới \(n.destination)"
-            l2 = "\(Self.km(n.remainingKm)) km · đến lúc \(Self.hhmm(n.eta))"
-        }
-        c.text(l1, x: x, y: Self.lineY(75, 22, 17), size: 17, weight: .medium, color: RGB(230, 230, 230).cg(), maxWidth: maxW)
-        c.text(l2, x: x, y: Self.lineY(101, 22, 17), size: 17, weight: .medium, color: RGB(230, 230, 230).cg(), maxWidth: maxW)
-        c.text("Nhấn Enter để mở", x: x, y: Self.lineY(127, 20, 16), size: 16, weight: .semibold, color: pc.cg())
-    }
-
     /// Bản đồ đang mở. Có dữ liệu bản đồ thật thì vẽ vector (OpenFreeMap), không thì vẽ sơ đồ minh họa.
     /// Không dẫn đường: chỉ bản đồ + mũi tên vị trí. Có dẫn đường: thêm ô rẽ, giờ đến, biển tốc độ.
     private func drawMapOpen(_ c: Canvas, _ ui: DashUI, pc: RGB, date: Date, map: MapScene?) {
@@ -398,12 +370,8 @@ public struct DashRenderer {
         c.fillCircle(center: CGPoint(x: p.x, y: p.y - 19.4), radius: 3.5, RGB.white.cg())
     }
 
-    /// Ô hướng rẽ, giờ đến và biển tốc độ vẽ đè lên bản đồ; khi menu bản đồ mở thì chỉ có menu.
+    /// Ô hướng rẽ, giờ đến và biển tốc độ vẽ đè lên bản đồ.
     private func drawMapOverlays(_ c: Canvas, _ ui: DashUI, pc: RGB) {
-        if ui.menu != nil {
-            drawMapMenu(c, ui, pc: pc)
-            return
-        }
         guard let n = ui.nav else { return }
 
         // Ô hướng rẽ (góc trên trái), đổi màu theo khoảng cách
@@ -442,61 +410,6 @@ public struct DashRenderer {
         }
     }
 
-    /// Menu bản đồ tự vẽ: tấm tối trong x 74–406, y 14–170 (chừa nút ＋/－ và thanh dưới), 4 dòng cao 36 nhìn thấy.
-    private func drawMapMenu(_ c: Canvas, _ ui: DashUI, pc: RGB) {
-        guard let menu = ui.menu else { return }
-        let items = ui.menuItems()
-        guard !items.isEmpty else { return }
-        let index = max(0, min(items.count - 1, menu.index))
-        let start = DashUI.menuWindowStart(index: index, count: items.count)
-        let end = min(items.count, start + DashUI.menuVisibleRows)
-
-        let panel = CGRect(x: 74, y: 14, width: 332, height: CGFloat(end - start) * 36 + 12)
-        c.fill(panel, RGB(36, 41, 53).cg(0.86), radius: 22)
-        c.stroke(panel.insetBy(dx: 0.5, dy: 0.5), RGB.white.cg(0.22), width: 1, radius: 21.5)
-
-        let subColor = RGB(196, 201, 212)
-        for slot in start..<end {
-            let it = items[slot]
-            let selected = slot == index
-            let row = CGRect(x: 80, y: 20 + CGFloat(slot - start) * 36, width: 320, height: 36)
-            if selected {
-                if it.danger {
-                    c.fill(row, Self.bad.cg(0.88), radius: 16)
-                } else {
-                    c.fill(row, RGB.white.cg(0.16), radius: 16)
-                    c.fill(row, pc.cg(0.6), radius: 16)
-                }
-                c.stroke(row.insetBy(dx: 0.5, dy: 0.5), RGB.white.cg(0.3), width: 1, radius: 15.5)
-            }
-            let labelColor: CGColor = it.danger && !selected ? RGB(255, 122, 114).cg() : RGB.white.cg()
-            let sideColor: CGColor = selected ? RGB.white.cg() : subColor.cg()
-            c.withAlpha(it.off ? 0.5 : 1) {
-                let box = CGRect(x: row.minX + 8, y: row.minY + 5, width: 26, height: 26)
-                c.fill(box, it.danger ? Self.bad.cg(0.55) : RGB.white.cg(0.14), radius: 8)
-                c.inBox(24, box.insetBy(dx: 4.5, dy: 4.5)) { Icons.menuIcon(c, it.icon, RGB.white.cg()) }
-
-                let mid = row.minY + 18
-                var right = row.maxX - 12
-                if it.chevron {
-                    let ew = c.measure("›", size: 22, weight: .semibold)
-                    right -= ew
-                    c.text("›", x: right, y: Self.lineY(mid - 11, 22, 22), size: 22, weight: .semibold, color: sideColor)
-                    right -= 6
-                }
-                if let sub = it.sub, !sub.isEmpty {
-                    let sw = min(120, c.measure(sub, size: 16, weight: .medium))
-                    c.text(sub, x: right - sw, y: Self.lineY(mid - 10.4, 20.8, 16), size: 16, weight: .medium,
-                           color: sideColor, maxWidth: 120)
-                    right -= sw + 10
-                }
-                let lx = row.minX + 44
-                c.text(it.label, x: lx, y: Self.lineY(mid - 13.35, 24.7, 19), size: 19, weight: .semibold,
-                       color: labelColor, maxWidth: max(0, right - lx))
-            }
-        }
-    }
-
     static func hhmm(_ d: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
@@ -521,7 +434,7 @@ public struct DashRenderer {
         }
     }
 
-    /// Bánh xe 3 icon ở mép phải, nền trong suốt (chỉ ô màu từng trang). Trượt ra khi mở bản đồ (lần lượt
+    /// Bánh xe 3 icon ở mép phải, nền trong suốt (chỉ ô màu từng trang). Trượt ra khi vào trang bản đồ (lần lượt
     /// Home, Nhạc, Bản đồ), trượt vào lại khi thoát và sau màn chào.
     private func drawWheel(_ c: Canvas, _ ui: DashUI, r: Double, now: TimeInterval, since: Double?) {
         let t = now - ui.mapToggledAt

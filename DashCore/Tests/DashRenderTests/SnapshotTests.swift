@@ -92,6 +92,19 @@ final class SnapshotTests: XCTestCase {
         return ui
     }
 
+    /// Bấm `times` lần cách nhau 0,15 s từ `at` rồi chốt (tick) sau cửa sổ chờ. Trả về thời điểm sau khi chốt.
+    @discardableResult
+    private func tap(_ ui: DashUI, _ button: DashUI.Button, times: Int = 1, at: TimeInterval) -> TimeInterval {
+        var t = at
+        for _ in 0..<times {
+            _ = ui.press(button, now: t)
+            t += 0.15
+        }
+        t += DashUI.doublePressWindow + 0.1
+        _ = ui.tick(now: t)
+        return t
+    }
+
     func testHome() throws {
         try shot("01-home", filled(), now: 100)
         try shot("02-home-no-nav", filled(nav: nil), now: 100)
@@ -122,75 +135,52 @@ final class SnapshotTests: XCTestCase {
 
     func testMusic() throws {
         let ui = filled()
-        _ = ui.press(.up, now: 0)
+        tap(ui, .up, at: 0)
         try shot("07-music", ui, now: 10)
-        _ = ui.press(.enterHold, now: 10)
-        _ = ui.press(.up, now: 10.1)
-        try shot("08-music-volume", ui, now: 10.2)
+        tap(ui, .down, times: 3, at: 10)          // ba lần DOWN: chế độ âm lượng
+        XCTAssertTrue(ui.volumeMode)
+        _ = ui.press(.up, now: 11.1)
+        try shot("08-music-volume", ui, now: 11.2)
         let none = DashUI()
-        _ = none.press(.up, now: 0)
+        tap(none, .up, at: 0)
         try shot("09-music-empty", none, now: 10)
     }
 
     func testWheelMidRotation() throws {
         let ui = filled()
         _ = ui.press(.down, now: 0)
-        try shot("10-wheel-rotating", ui, now: 0.2)
+        _ = ui.tick(now: 0.5)                       // chốt bấm đơn: bánh xe bắt đầu xoay
+        try shot("10-wheel-rotating", ui, now: 0.7)
     }
 
     func testMap() throws {
         let ui = filled()
-        _ = ui.press(.down, now: 0)
-        try shot("11-map-cover", ui, now: 10)
-        try shot("12-map-cover-no-nav", filledMapCover(), now: 10)
-        _ = ui.press(.enter, now: 10)
-        try shot("13-map-open", ui, now: 11)
-        _ = ui.press(.down, now: 12); _ = ui.press(.down, now: 12.1); _ = ui.press(.down, now: 12.2)
-        try shot("14-map-zoom-out", ui, now: 13)
+        tap(ui, .down, at: 0)
+        XCTAssertEqual(ui.page, .map)
+        try shot("11-map-open", ui, now: 10)
+        var t = 12.0
+        for _ in 0..<3 { t = tap(ui, .down, at: t) }
+        try shot("14-map-zoom-out", ui, now: t)
         ui.nav?.distanceToTurnM = 300
-        _ = ui.press(.up, now: 14); _ = ui.press(.up, now: 14.1); _ = ui.press(.up, now: 14.2); _ = ui.press(.up, now: 14.3)
-        try shot("15-map-zoom-in-warn", ui, now: 15)
+        for _ in 0..<4 { t = tap(ui, .up, at: t) }
+        try shot("15-map-zoom-in-warn", ui, now: t)
     }
 
     func testMapIdleArrowOnly() throws {
         let ui = filled(nav: nil)
-        _ = ui.press(.down, now: 0)
-        _ = ui.press(.enter, now: 1)
+        tap(ui, .down, at: 0)
         try shot("16-map-idle-arrow", ui, now: 10)
+        XCTAssertEqual(ui.bottomBarText(now: 10), "Chia sẻ vị trí từ Google Maps")
     }
 
-    func testMapMenu() throws {
+    func testMapLeavesByDoubleUp() throws {
         let ui = filled()
-        _ = ui.press(.down, now: 0)
-        _ = ui.press(.enter, now: 1)
-        let plain = try shot("17-map-navigating", ui, now: 20)
-        _ = ui.press(.enterHold, now: 20)
-        let menu = try shot("18-map-menu", ui, now: 21)
-        // Vùng an toàn: nút ＋/－ (x < 56) và thanh dưới (y ≥ 186) giống hệt khi không có menu
-        XCTAssertEqual(region(menu, x: 0..<70, y: 68..<170), region(plain, x: 0..<70, y: 68..<170), "menu đè lên nút ＋/－")
-        XCTAssertEqual(region(menu, x: 0..<480, y: 186..<234), region(plain, x: 0..<480, y: 186..<234), "menu đè lên thanh dưới")
-        XCTAssertNotEqual(region(menu, x: 74..<406, y: 14..<170), region(plain, x: 74..<406, y: 14..<170), "menu phải hiện")
-
-        _ = ui.press(.up, now: 21.5)                       // xoay vòng tới "Yêu thích"
-        _ = ui.press(.enter, now: 21.6)
-        try shot("19-map-menu-favourites", ui, now: 22)
-
-        let long = filled()
-        long.places.favs += [SavedPlace(name: "Bệnh viện Chợ Rẫy", sub: "Q.5", lat: 10.75, lon: 106.66),
-                             SavedPlace(name: "Chợ Bến Thành", sub: "Q.1", lat: 10.77, lon: 106.69)]
-        _ = long.press(.down, now: 0)
-        _ = long.press(.enter, now: 1)
-        _ = long.press(.enterHold, now: 2)
-        _ = long.press(.up, now: 2.1)
-        _ = long.press(.enter, now: 2.2)
-        for t in 0..<3 { _ = long.press(.down, now: 2.3 + Double(t) * 0.1) }   // dòng cuối: danh sách cuộn
-        try shot("20-map-menu-scrolled", long, now: 3)
-
-        let idle = filled(nav: nil)
-        _ = idle.press(.down, now: 0)
-        _ = idle.press(.enter, now: 1)
-        _ = idle.press(.enterHold, now: 2)
-        try shot("21-map-menu-no-nav", idle, now: 3)
+        tap(ui, .down, at: 0)
+        let map = try shot("17-map-navigating", ui, now: 20)
+        tap(ui, .up, times: 2, at: 20)
+        XCTAssertEqual(ui.page, .home)
+        let home = try shot("17b-home-after-map", ui, now: 22)
+        XCTAssertNotEqual(region(map, x: 0..<480, y: 0..<186), region(home, x: 0..<480, y: 0..<186))
     }
 
     func testArrival() throws {
@@ -198,11 +188,5 @@ final class SnapshotTests: XCTestCase {
         ui.startNavigation(ui.nav!, now: 0)
         ui.arrive(now: 10)
         try shot("22-arrival", ui, now: 11)
-    }
-
-    private func filledMapCover() -> DashUI {
-        let ui = filled(nav: nil)
-        _ = ui.press(.down, now: 0)
-        return ui
     }
 }

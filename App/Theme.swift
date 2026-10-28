@@ -209,6 +209,7 @@ enum Sym {
     static let pin = "mappin.and.ellipse"
     static let clipboard = "doc.on.clipboard"
     static let key = "key.fill"
+    static let share = "square.and.arrow.up"
     static let route = "point.topleft.down.curvedto.point.bottomright.up"
     static let shield = "checkmark.shield.fill"
     static let sparkles = "sparkles"

@@ -43,6 +43,7 @@ final class NavigationController: ObservableObject {
     private var route: Route?
     private var destination: Pending?
     private var lastPending: Pending?
+    private var awaitingFix: Pending?
     private var lastText: String?
     private var lastFix: CLLocation?
     private var lastHeading: Double = 0
@@ -123,9 +124,10 @@ final class NavigationController: ObservableObject {
     }
 
     /// Lưu địa điểm đang chờ xác nhận (không bắt đầu dẫn đường).
-    func savePending(as slot: PlaceSlot) {
+    func savePending(as slot: PlaceSlot, name: String? = nil) {
         guard case .confirm(let p) = state else { return }
-        let place = SavedPlace(name: p.name, sub: "", lat: p.point.lat, lon: p.point.lon)
+        let custom = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let place = SavedPlace(name: custom.isEmpty ? p.name : custom, sub: "", lat: p.point.lat, lon: p.point.lon)
         settings.savePlace(place, as: slot)
         pendingSlot = nil
         restState()
@@ -158,15 +160,23 @@ final class NavigationController: ObservableObject {
         begin(Pending(name: place.name, point: GeoPoint(lat: place.lat, lon: place.lon)))
     }
 
+    /// Bắt đầu đi. Định vị chỉ chạy khi cần nên vị trí có thể cũ: nếu quá 30 s thì chờ một lần cập nhật mới (tối đa 20 s).
     private func begin(_ p: Pending) {
         lastPending = p
-        guard let loc = lastFix else {
-            state = .failed("Chưa có vị trí GPS. Cho phép vị trí “Khi dùng app” rồi thử lại.")
-            return
-        }
         destination = p
         state = .routing
-        Task { await plan(from: loc, to: p, initial: true) }
+        if let loc = lastFix, Date().timeIntervalSince(loc.timestamp) < 30 {
+            Task { await plan(from: loc, to: p, initial: true) }
+            return
+        }
+        awaitingFix = p
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            guard awaitingFix == p else { return }
+            awaitingFix = nil
+            if navigator == nil { destination = nil }
+            state = .failed("Chưa có vị trí GPS. Cho phép vị trí “Khi dùng app” rồi thử lại.")
+        }
     }
 
     /// Thử lại sau lỗi: tính đường lại tới điểm cuối, hoặc đọc lại link vừa dán.
@@ -181,6 +191,7 @@ final class NavigationController: ObservableObject {
     }
 
     func stop() {
+        awaitingFix = nil
         navigator = nil
         route = nil
         destination = nil
@@ -227,6 +238,10 @@ final class NavigationController: ObservableObject {
     func locationUpdated(_ loc: CLLocation) {
         lastFix = loc
         if loc.course >= 0 && loc.speed > 1.5 { lastHeading = loc.course }
+        if let p = awaitingFix {
+            awaitingFix = nil
+            Task { await plan(from: loc, to: p, initial: true) }
+        }
         guard let nav = navigator, let dest = destination else { return }
         let here = GeoPoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude)
         let u = nav.update(here, at: loc.timestamp, speedMps: max(0, loc.speed))

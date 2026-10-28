@@ -18,12 +18,26 @@ struct DashTab: View {
                     .padding(.top, 6)
                     .padding(.bottom, 18)
                 tiles
+                vehicleCaption
                 GroupTitle("Xem thử trên đồng hồ")
                 DashPreview(link: link)
                 DashButtons(link: link)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
+        }
+    }
+
+    /// Một dòng nhỏ báo vì sao chưa có số liệu xe (chỉ hiện khi một trong 3 ô xe còn trống).
+    @ViewBuilder private var vehicleCaption: some View {
+        let d = ccu.data
+        if d.coolantC == nil || d.batteryV == nil || d.odoKm == nil {
+            Text(ccu.status)
+                .font(.system(size: 12.5))
+                .foregroundColor(Theme.sec)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 10)
         }
     }
 
@@ -203,74 +217,9 @@ private struct DashButtons: View {
         HStack(spacing: 8) {
             Button("▲") { link.press(.up) }.buttonStyle(.pill)
             Button("▼") { link.press(.down) }.buttonStyle(.pill)
-            EnterButton(onTap: { link.press(.enter) }, onHold: { link.press(.enterHold) })
             Button("Home") { link.press(.home) }.buttonStyle(.pill)
         }
         .padding(.top, 12)
-    }
-}
-
-/// Một nút Enter: chạm nhanh = Enter, giữ 0,6 s = ấn giữ (có thanh tô dần báo tiến độ).
-struct EnterButton: View {
-    let onTap: () -> Void
-    let onHold: () -> Void
-    static let holdTime: TimeInterval = 0.6
-
-    @State private var pressing = false
-    @State private var held = false
-    @State private var work: DispatchWorkItem?
-
-    var body: some View {
-        let shape = Capsule()
-        VStack(spacing: 0) {
-            Text("Enter").font(.system(size: 15, weight: .semibold))
-            Text("chạm · giữ").font(.system(size: 10, weight: .medium)).opacity(0.7)
-        }
-        .foregroundColor(Theme.blue)
-        .padding(.vertical, 6)
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity)
-        .background(
-            ZStack(alignment: .leading) {
-                shape.fill(Material.ultraThinMaterial)
-                shape.fill(Theme.glass)
-                GeometryReader { g in
-                    Rectangle().fill(Theme.blue.opacity(0.28))
-                        .frame(width: pressing ? g.size.width : 0)
-                        .animation(pressing ? .linear(duration: Self.holdTime) : .easeOut(duration: 0.1), value: pressing)
-                }
-                .clipShape(shape)
-                shape.strokeBorder(Theme.edge, lineWidth: 1)
-            }
-            .shadow(color: Theme.lift, radius: 8, x: 0, y: 5)
-        )
-        .contentShape(Capsule())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in begin() }
-                .onEnded { v in end(cancelled: hypot(v.translation.width, v.translation.height) > 40) }
-        )
-    }
-
-    private func begin() {
-        guard !pressing else { return }
-        pressing = true
-        held = false
-        let w = DispatchWorkItem {
-            held = true
-            onHold()
-        }
-        work = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdTime, execute: w)
-    }
-
-    private func end(cancelled: Bool) {
-        work?.cancel()
-        work = nil
-        let wasHeld = held
-        pressing = false
-        held = false
-        if !cancelled && !wasHeld { onTap() }
     }
 }
 

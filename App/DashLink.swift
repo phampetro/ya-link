@@ -63,6 +63,12 @@ final class DashLink: NSObject, ObservableObject {
     private var lastOneShotAt: TimeInterval = -100
     private var lastBarSent: String?
     private var buttonCount = 0
+    // Menu gốc của đồng hồ: những gì đã gửi, để chỉ số 48 trỏ đúng mục
+    private let fuelSearch = FuelSearch()
+    private var favSent: [SavedPlace] = []
+    private var fuelSent: [FuelStation] = []
+    private var noteText: String?
+    private var noteUntil: TimeInterval = 0
 
     private var now: TimeInterval { Date().timeIntervalSince(started) }
 
@@ -72,6 +78,7 @@ final class DashLink: NSObject, ObservableObject {
         navigation = NavigationController(ui: ui, settings: settings, clock: { Date().timeIntervalSince(t0) })
         navigation.onChange = { [weak self] in self?.dirty = true }
         navigation.onToast = { [weak self] text in self?.toaster.show(text) }
+        navigation.onStarted = { [weak self] info in self?.sendTurnBox(info) }
         settings.onProfileChange = { [weak self] in self?.pushProfile() }
     }
 
@@ -97,6 +104,8 @@ final class DashLink: NSObject, ObservableObject {
         ui.greetingEnabled = settings.greetingEnabled
         ui.edgeGlow = settings.edgeGlow
         ui.places = settings.places
+        // Nhà / Công ty đã lưu hay chưa: đồng hồ dùng cờ này cho menu gốc của nó
+        send(session.setSaved(home: settings.places.home != nil, work: settings.places.work != nil))
         dirty = true
     }
 
@@ -340,9 +349,129 @@ final class DashLink: NSObject, ObservableObject {
                 if speed != v { speed = v }
             case .ack(_, let rtt):
                 lastRoundTripMs = rtt
+            case .goHome:
+                add("dash → menu: về nhà")
+                goToSaved(settings.places.home, missing: "Chưa đặt nhà")
+            case .goWork:
+                add("dash → menu: đi công ty")
+                goToSaved(settings.places.work, missing: "Chưa đặt công ty")
+            case .stopRoute:
+                add("dash → menu: dừng dẫn đường")
+                navigation.stop()
+                dirty = true
+            case .listOpened(let id):
+                let listName = id == DashList.favourites ? "yêu thích" : (id == DashList.fuel ? "trạm xăng" : String(id))
+                add("dash → menu: \(listName)")
+                openList(id)
+            case .listClosed(let id):
+                add("dash → menu: đóng danh sách \(id)")
+            case .listSelected(let index, let listId, let option):
+                add("dash → menu: chọn mục \(index) của danh sách \(listId) (option \(option))")
+                selectListItem(index: index, listId: listId)
             case .other(let m):
-                add("LỆNH KHÁC (ghi lại để dò nút Enter/giữ): \(m)")
+                add("LỆNH KHÁC (chưa biết): \(m)")
             }
+        }
+    }
+
+    // MARK: - Menu gốc của đồng hồ (Enter / giữ Enter không tới app; app chỉ phục vụ danh sách)
+
+    /// Ghi chú ngắn ở thanh dưới (vd. "Chưa đặt nhà") trong 4 giây.
+    private func showNote(_ text: String) {
+        noteText = text
+        noteUntil = now + 4
+        toaster.show(text)
+    }
+
+    private func goToSaved(_ place: SavedPlace?, missing: String) {
+        guard let p = place else {
+            showNote(missing)
+            return
+        }
+        startRoute(to: p)
+    }
+
+    private func startRoute(to place: SavedPlace) {
+        add("dẫn đường tới: \(place.name)")
+        navigation.navigate(to: place)
+        session.navigating = true
+        if session.showing { send([PhoneCommand.navigationState(navigating: true)]) }
+        dirty = true
+    }
+
+    /// Ô rẽ riêng của đồng hồ sau khi tuyến sẵn sàng (chế độ 0; documented — not yet observed).
+    private func sendTurnBox(_ info: NavInfo) {
+        guard session.showing else { return }
+        let d = DashLists.formatDistance(meters: info.distanceToTurnM)
+        let minutes = max(0, Int((info.eta.timeIntervalSinceNow / 60).rounded()))
+        send([PhoneCommand.turnBox(icon: 0, distance: d.value, unit: d.unit, road: info.nextStreet),
+              PhoneCommand.eta(minutes: minutes)])
+    }
+
+    private func distanceAndOctant(lat: Double, lon: Double) -> (meters: Double, octant: UInt8) {
+        guard let here = location.location else { return (0, 0) }
+        let m = CLLocation(latitude: lat, longitude: lon).distance(from: here)
+        let b = DashLists.bearing(fromLat: here.coordinate.latitude, lon: here.coordinate.longitude, toLat: lat, lon: lon)
+        return (m, DashLists.octant(bearingDeg: b))
+    }
+
+    private func openList(_ id: Int) {
+        if id == DashList.favourites {
+            sendFavourites()
+        } else if id == DashList.fuel {
+            sendFuel()
+        } else {
+            add("danh sách lạ: \(id)")
+        }
+    }
+
+    /// Danh sách 3: Nhà, Công ty (nếu đã đặt), rồi các địa điểm yêu thích.
+    private func sendFavourites() {
+        var places: [(label: String, place: SavedPlace)] = []
+        if let h = settings.places.home { places.append(("Nhà", h)) }
+        if let w = settings.places.work { places.append(("Công ty", w)) }
+        for f in settings.places.favs { places.append((f.name, f)) }
+        places = Array(places.prefix(DashList.maxItems))
+        favSent = places.map { $0.place }
+        let items = places.map { entry -> DashListItem in
+            let d = distanceAndOctant(lat: entry.place.lat, lon: entry.place.lon)
+            return DashListItem(name: entry.label, distanceMeters: d.meters, octant: d.octant)
+        }
+        add("danh sách yêu thích: \(items.count) mục")
+        send(DashLists.frames(listId: DashList.favourites, items: items))
+    }
+
+    /// Danh sách 4: trạm xăng gần (MapKit, tối đa 8, cache ~60 s). Chưa có GPS thì gửi danh sách rỗng.
+    private func sendFuel() {
+        guard let loc = location.location else {
+            fuelSent = []
+            add("trạm xăng: chưa có GPS, gửi danh sách rỗng")
+            send(DashLists.frames(listId: DashList.fuel, items: []))
+            return
+        }
+        Task { [weak self] in
+            guard let self = self else { return }
+            let stations = await self.fuelSearch.search(near: loc)
+            // Đồng hồ đã đóng danh sách trong lúc tìm: bỏ
+            guard self.session.openListId == DashList.fuel else { return }
+            self.fuelSent = stations
+            self.add("trạm xăng: \(stations.count) kết quả")
+            let items = stations.map { st -> DashListItem in
+                let d = self.distanceAndOctant(lat: st.lat, lon: st.lon)
+                return DashListItem(name: st.name, distanceMeters: d.meters, octant: d.octant)
+            }
+            self.send(DashLists.frames(listId: DashList.fuel, items: items))
+        }
+    }
+
+    private func selectListItem(index: Int, listId: Int) {
+        if listId == DashList.favourites, favSent.indices.contains(index) {
+            startRoute(to: favSent[index])
+        } else if listId == DashList.fuel, fuelSent.indices.contains(index) {
+            let s = fuelSent[index]
+            startRoute(to: SavedPlace(name: s.name, sub: "", lat: s.lat, lon: s.lon))
+        } else {
+            add("mục không có trong danh sách đã gửi (index \(index), list \(listId))")
         }
     }
 
@@ -378,8 +507,22 @@ final class DashLink: NSObject, ObservableObject {
             if m != ui.music { ui.music = m; if ui.page == .music { dirty = true } }
         }
 
+        // Trạng thái dẫn đường báo cho đồng hồ (lệnh 2); không gửi khi danh sách gốc đang mở
+        let navActive: Bool
+        switch navigation.state {
+        case .routing, .active: navActive = true
+        default: navActive = false
+        }
+        if session.navigating != navActive {
+            session.navigating = navActive
+            if session.showing && session.openListId == nil { send([PhoneCommand.navigationState(navigating: navActive)]) }
+        }
+
         // Chữ thanh dưới: chỉ gửi khi đổi (lệnh 3 nhỏ, không phải gửi lại cả khung)
-        let bar = ui.bottomBarText(now: t)
+        var bar = ui.bottomBarText(now: t)
+        if let note = noteText {
+            if t < noteUntil { bar = note } else { noteText = nil }
+        }
         session.bottomBarText = bar
         if barText != bar { barText = bar }
         if session.showing && bar != lastBarSent {

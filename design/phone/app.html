@@ -91,10 +91,6 @@
   .stepper { display: flex; background: var(--fill); border-radius: 999px; overflow: hidden; }
   .stepper button { width: 48px; height: 34px; border: 0; background: none; color: var(--text); font-size: 20px; cursor: pointer; }
   .stepper button + button { border-left: 1px solid var(--sep); }
-  .btn.enter { position: relative; overflow: hidden; user-select: none; touch-action: none; line-height: 1.05; }
-  .btn.enter small { display: block; font-size: 10px; font-weight: 500; opacity: 0.7; }
-  .btn.enter.holding::after { content: ""; position: absolute; inset: 0; background: var(--blue); opacity: 0.28; transform-origin: left; animation: fill 0.6s linear forwards; }
-  @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
   input.field { width: 100%; border: 0; background: transparent; font: inherit; color: var(--text); outline: none; padding: 0; text-align: left; }
   .msg { font-size: 13px; padding: 0 16px 12px; }
@@ -237,7 +233,6 @@
       <div class="dashcard"><div class="dashview"><iframe id="dashframe" src="../dash/home.html?embed=1" title="Màn hình đồng hồ"></iframe></div></div>
       <div class="btnrow">
         <button class="btn" data-btn="up">▲</button><button class="btn" data-btn="down">▼</button>
-        <button class="btn enter" id="enterbtn">Enter<small>chạm · giữ</small></button>
         <button class="btn" data-btn="home">Home</button>
       </div>
     </section>
@@ -277,6 +272,7 @@
     <div class="grab"></div>
     <div class="big">Đến đây?</div>
     <div style="font-size:19px">Chợ Bến Thành</div>
+    <input class="field" id="place-name" placeholder="Tên gợi nhớ (không bắt buộc)" maxlength="40" autocomplete="off" style="background:rgba(120,120,128,.14);border-radius:14px;padding:10px 14px">
     <div style="font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--sec)">10.77250, 106.69800</div>
     <div style="font-size:13px;color:var(--sec)">Link Google Maps đôi khi đọc sai địa điểm. Kiểm tra tên và toạ độ trước khi tiếp tục.</div>
     <div id="sheet-btns" style="margin-top:auto"></div>
@@ -422,7 +418,7 @@
 
   // ---- Tab Dẫn đường ----
   const placeRow = (k, label, color) => S.places[k]
-    ? `<div class="row hasico"><span class="lead">${tile("pin", color)}<span>${label}<br><span class="val">${esc(S.places[k].sub)}</span></span></span><button class="link red" data-act="del-place" data-p="${k}">Xoá</button></div>`
+    ? `<div class="row hasico" data-act="go-place" data-p="${k}" style="cursor:pointer"><span class="lead">${tile("pin", color)}<span>${label}<br><span class="val">${esc(S.places[k].name)} · ${esc(S.places[k].sub)}</span></span></span><span><button class="link" data-act="go-place" data-p="${k}">Đi</button><button class="link red" data-act="del-place" data-p="${k}" style="margin-left:14px">Xoá</button></span></div>`
     : `<div class="row hasico"><span class="lead">${tile("pin", color)}<button class="link" data-act="add-place" data-p="${k}">Đặt ${label.toLowerCase()} từ link</button></span></div>`;
   function renderNav() {
     const st = {
@@ -445,10 +441,10 @@
       <div class="group">
         ${placeRow("home", "Nhà", "blue")}
         ${placeRow("work", "Công ty", "purple")}
-        ${S.places.favs.map((f, i) => `<div class="row hasico"><span class="lead">${tile("pin", "orange")}<span>${esc(f.name)}<br><span class="val">${esc(f.sub)}</span></span></span><button class="link red" data-act="del-place" data-p="fav${i}">Xoá</button></div>`).join("")}
+        ${S.places.favs.map((f, i) => `<div class="row hasico" data-act="go-place" data-p="fav${i}" style="cursor:pointer"><span class="lead">${tile("pin", "orange")}<span>${esc(f.name)}<br><span class="val">${esc(f.sub)}</span></span></span><span><button class="link" data-act="go-place" data-p="fav${i}">Đi</button><button class="link red" data-act="del-place" data-p="fav${i}" style="margin-left:14px">Xoá</button></span></div>`).join("")}
         <div class="row hasico"><span class="lead">${tile("pin", "orange")}<button class="link" data-act="add-place" data-p="fav">Thêm yêu thích từ link</button></span></div>
       </div>
-      <div class="group-foot">Dán link Google Maps để lưu. Giữ Enter khi bản đồ đang mở để đi nhanh tới các nơi này.</div>
+      <div class="group-foot">Chạm một nơi để đi ngay. Thêm nơi mới bằng link Google Maps.</div>
       <div class="group-title">Vị trí</div>
       <div class="group">${row("Quyền vị trí", "Khi dùng app", "good", ["shield", "green"])}</div>`;
   }
@@ -524,7 +520,7 @@
         <div class="row hasico"><span class="lead">${tile("photo", "purple")}<button class="link">Đổi bộ ảnh (2 ảnh)</button></span></div>
         <div class="row col"><span style="margin-bottom:8px">Đổi ảnh mỗi</span>${seg("interval", [[4, "4 giây"], [8, "8 giây"], [15, "15 giây"]], S.interval)}</div>
       </div>
-      <div class="group-foot">Ảnh nền dùng cho trang chủ và trang Nhạc. Bấm Enter ở trang chủ để đổi ảnh ngay.</div>
+      <div class="group-foot">Ảnh nền dùng cho trang chủ và trang Nhạc. Bấm đúp ▲ hoặc ▼ ở trang chủ để đổi ảnh ngay.</div>
       <div class="group-title">Thanh dưới trang chủ</div>
       <div class="group"><div class="row col">${seg("bar", [["odo", "ODO"], ["trip1", "TRIP 1"], ["trip2", "TRIP 2"], ["oil", "OIL"]], S.bar)}</div></div>
       <div class="group-foot">Đồng hồ hiện: <b>${barText()}</b></div>
@@ -603,7 +599,7 @@
     if (v) dash({ vehicle: v });
   }
 
-  // Đồng hồ báo lại khi người lái bật/tắt chỉ đường bằng menu giữ Enter
+  // Đồng hồ báo lại khi người lái bật/tắt chỉ đường (tương thích mockup cũ)
   window.addEventListener("message", (e) => {
     const d = e.data;
     if (!d || !d.yalinkNav) return;
@@ -647,9 +643,15 @@
       renderAll(); syncDash(); toast("Đã xoá");
     }
     if (a === "save-place") {
-      const p = t.dataset.p, spot = { name: "Chợ Bến Thành", sub: "Q.1" };
+      const p = t.dataset.p, nm = (($("#place-name") || {}).value || "").trim(), spot = { name: nm || "Chợ Bến Thành", sub: "Q.1" };
       if (p === "fav") { if (!S.places.favs.some((f) => f.name === spot.name)) S.places.favs.push(spot); } else S.places[p] = spot;
       S.addTo = null; S.nav = "idle"; renderAll(); syncDash(); toast(p === "home" ? "Đã lưu làm Nhà" : p === "work" ? "Đã lưu làm Công ty" : "Đã thêm vào Yêu thích");
+    }
+    if (a === "go-place") {
+      const k = t.dataset.p, pl = k === "home" || k === "work" ? S.places[k] : S.places.favs[+k.slice(3)];
+      if (!pl) return;
+      S.addTo = null; S.nav = "routing"; renderAll(); toast("Đi tới " + pl.name);
+      setTimeout(() => { S.nav = "active"; S.simNav = true; renderAll(); syncDash(); }, 1100);
     }
     if (a === "cancel-nav") { S.nav = "idle"; S.addTo = null; renderAll(); }
     if (a === "stop-nav") { S.nav = "idle"; S.simNav = false; renderAll(); syncDash(); }
@@ -679,15 +681,6 @@
     if (e.target.id === "name-in") { S.name = e.target.value; dash({ name: S.name }); renderDash(); }
   });
   document.addEventListener("change", (e) => { if (e.target.id === "name-in") renderSetA(); });
-
-  // Nút Enter gộp: chạm = Enter, giữ 0,6 giây = ấn giữ
-  (() => {
-    const eb = $("#enterbtn"); let timer = null, held = false;
-    eb.addEventListener("pointerdown", () => { held = false; eb.classList.add("holding"); timer = setTimeout(() => { held = true; dash({ btn: "hold" }); }, 600); });
-    const end = (send) => { if (timer === null) return; clearTimeout(timer); timer = null; eb.classList.remove("holding"); if (send && !held) dash({ btn: "enter" }); };
-    eb.addEventListener("pointerup", () => end(true));
-    ["pointerleave", "pointercancel"].forEach((ev) => eb.addEventListener(ev, () => end(false)));
-  })();
 
   // Màn "Chào bạn!" lần đầu mở app
   $("#onb-name").addEventListener("input", renderOnb);

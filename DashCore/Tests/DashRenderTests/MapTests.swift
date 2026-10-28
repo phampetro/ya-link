@@ -20,10 +20,14 @@ final class MapTests: XCTestCase {
                          destination: "Chợ Bến Thành", remainingKm: 7, eta: Date(timeIntervalSince1970: 1_761_641_000),
                          speedLimit: 60)
         _ = ui.press(.down, now: 0)
-        _ = ui.press(.enter, now: 1)
+        _ = ui.tick(now: 0.5)                     // chốt bấm đơn: sang trang Bản đồ (hiện ngay)
         var t = 2.0
         let steps = zoom - DashUI.defaultZoom
-        for _ in 0..<abs(steps) { _ = ui.press(steps > 0 ? .up : .down, now: t); t += 0.1 }
+        for _ in 0..<abs(steps) {
+            _ = ui.press(steps > 0 ? .up : .down, now: t)
+            t += 0.6
+            _ = ui.tick(now: t)                   // chốt bấm đơn: thu phóng
+        }
         return ui
     }
 

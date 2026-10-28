@@ -220,6 +220,42 @@ final class CCUProtocolTests: XCTestCase {
         XCTAssertNil(d0.odoKm)
     }
 
+    func testDecode271OdoOnlyAndSentinel() {
+        // Chỉ param 72 (không có param 1): vẫn ra ODO, pin / nước nil
+        let only72 = packet(cmd: 271, pbVarintField(3, 1248) + pbBytesField(4, pbVarintField(1, 72) + pbBytesField(2, [0x00, 0x7D, 0x8C])))
+        let d = CCUVehicle.decode271(only72)
+        XCTAssertEqual(d.odoKm ?? -1, 3214.0, accuracy: 1e-9)
+        XCTAssertNil(d.batteryV)
+        XCTAssertNil(d.coolantC)
+
+        // Toàn 0xFF: không phải ODO
+        let ff = packet(cmd: 271, pbBytesField(4, pbVarintField(1, 72) + pbBytesField(2, [0xFF, 0xFF, 0xFF, 0xFF])))
+        XCTAssertNil(CCUVehicle.decode271(ff).odoKm)
+
+        // Param 1 ngắn hơn 16 byte: bỏ, không làm hỏng param 72 đi kèm
+        let short1 = pbBytesField(4, pbVarintField(1, 1) + pbBytesField(2, [0x01, 0x02, 0x03]))
+        let mixed = packet(cmd: 271, short1 + pbBytesField(4, pbVarintField(1, 72) + pbBytesField(2, [0x00, 0x7D, 0x8C])))
+        let dm = CCUVehicle.decode271(mixed)
+        XCTAssertEqual(dm.odoKm ?? -1, 3214.0, accuracy: 1e-9)
+        XCTAssertNil(dm.coolantC)
+
+        // Gói hỏng / rỗng: không crash, không có gì
+        XCTAssertEqual(CCUVehicle.decode271([0x01, 0x0F]), CCUVehicleData())
+        XCTAssertEqual(CCUVehicle.decode271(packet(cmd: 271, [0x22, 0x40, 0x01])), CCUVehicleData())
+    }
+
+    func testAuthAndIgnitionVectors() {
+        XCTAssertEqual(CCUMessage([0x01, 0x02, 0x01]), .authResult(accepted: true))
+        XCTAssertEqual(CCUMessage([0x01, 0x02, 0x00]), .authResult(accepted: false))
+        XCTAssertEqual(CCUMessage([0x01, 0x38, 0x01]), .ignition(on: true))
+        XCTAssertEqual(CCUMessage([0x01, 0x38, 0x00]), .ignition(on: false))
+        XCTAssertEqual(CCUCommand.ignitionRequest, [0x01, 0x37])
+        XCTAssertEqual(CCUCommand.ecuListRequest, [0x01, 0x03])
+        XCTAssertEqual(CCUCommand.fuelRequest, [0x01, 0x1F])
+        // ECU list tài liệu: `18 E0 09` sau 5 byte đầu → 1248
+        XCTAssertEqual(CCUVehicle.ecuIds(answer260: [0x01, 0x04, 0x00, 0x00, 0x03, 0x18, 0xE0, 0x09]), [1248])
+    }
+
     func testMerge() {
         var a = CCUVehicleData(ignitionOn: true, odoKm: 10)
         a.merge(CCUVehicleData(odoKm: 11, coolantC: 80))

@@ -29,6 +29,7 @@ struct SettingsTab: View {
                 barGroup
                 tripGroup
                 routingGroup
+                logGroup
                 versionLine
             }
             .padding(.horizontal, 16)
@@ -339,6 +340,18 @@ struct SettingsTab: View {
         }
     }
 
+    // MARK: - Nhật ký kết nối
+
+    private var logGroup: some View {
+        VStack(spacing: 0) {
+            GroupTitle("Nhật ký kết nối")
+            GroupCard {
+                LogShareRow(link: link)
+            }
+            GroupFoot("Gửi nhật ký cho người hỗ trợ khi đồng hồ hoặc dữ liệu xe không lên.")
+        }
+    }
+
     // MARK: - Dòng phiên bản
 
     private var versionLine: some View {
@@ -349,5 +362,31 @@ struct SettingsTab: View {
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .padding(.top, 22)
+    }
+}
+
+/// Dòng "Xuất nhật ký": chia sẻ toàn bộ log (lệnh đồng hồ và CCU) dạng văn bản.
+private struct LogShareRow: View {
+    let link: DashLink
+    @State private var text = ""
+    private let refresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        SwiftUI.ShareLink(item: text.isEmpty ? "(nhật ký trống)" : text, subject: Text("Nhật ký Ya Link")) {
+            HStack(spacing: 12) {
+                IconTile(symbol: Sym.share, color: .blue)
+                Text("Xuất nhật ký")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Theme.blue)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(minHeight: 50)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onAppear { text = link.logText }
+        .onReceive(refresh) { _ in text = link.logText }
     }
 }
