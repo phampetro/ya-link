@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- A: ghim vị trí, lõi là vòng 3 màu của 3 trang -->
+  <rect width="1024" height="1024" fill="#0b0d12"/>
+  <path d="M512 900C330 720 282 610 282 450A230 230 0 0 1 742 450C742 610 694 720 512 900Z" fill="#fff"/>
+  <circle cx="512" cy="450" r="140" fill="#0b0d12"/>
+  <g fill="none" stroke-width="54" stroke-linecap="butt">
+    <path d="M512 370A80 80 0 0 1 581.3 410" stroke="#30d158"/>
+    <path d="M581.3 410A80 80 0 0 1 581.3 490" stroke="#0a84ff"/>
+    <path d="M581.3 490A80 80 0 0 1 512 530" stroke="#30d158" opacity="0"/>
+  </g>
+  <g fill="none" stroke-width="54">
+    <path d="M512 370 A80 80 0 0 1 581.28 490" stroke="#0a84ff" opacity="0"/>
+  </g>
+  <circle cx="512" cy="450" r="80" fill="none" stroke="#ff2d55" stroke-width="52" stroke-dasharray="167.55 335.1" transform="rotate(-90 512 450)"/>
+  <circle cx="512" cy="450" r="80" fill="none" stroke="#0a84ff" stroke-width="52" stroke-dasharray="167.55 335.1" stroke-dashoffset="-167.55" transform="rotate(-90 512 450)"/>
+  <circle cx="512" cy="450" r="80" fill="none" stroke="#30d158" stroke-width="52" stroke-dasharray="167.55 335.1" stroke-dashoffset="-335.1" transform="rotate(-90 512 450)"/>
+</svg>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Ya Link: đồng hồ tốc độ 3 màu của 3 trang (Nhạc hồng, Home xanh dương, Bản đồ xanh lá),
+       kim trắng chỉ lên như mũi tên dẫn đường. Nền đặc kín cả ảnh (iOS tự bo góc). -->
+  <rect width="1024" height="1024" fill="#0b0d12"/>
+  <g fill="none" stroke-width="92" stroke-linecap="round">
+    <path d="M206 724A340 340 0 0 1 282 316" stroke="#ff2d55"/>
+    <path d="M338 262A340 340 0 0 1 686 262" stroke="#0a84ff"/>
+    <path d="M742 316A340 340 0 0 1 818 724" stroke="#30d158"/>
+  </g>
+  <path d="M512 270L612 650H412Z" fill="#fff" stroke="#fff" stroke-width="20" stroke-linejoin="round"/>
+  <circle cx="512" cy="696" r="70" fill="#fff"/>
+  <circle cx="512" cy="696" r="28" fill="#0b0d12"/>
+</svg>

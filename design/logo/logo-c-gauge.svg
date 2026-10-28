@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- C: đồng hồ tốc độ 3 màu, kim chỉ lên như mũi tên dẫn đường -->
+  <rect width="1024" height="1024" fill="#0b0d12"/>
+  <g fill="none" stroke-width="86" stroke-linecap="round">
+    <path d="M212 700A330 330 0 0 1 290 330" stroke="#ff2d55"/>
+    <path d="M345 275A330 330 0 0 1 679 275" stroke="#0a84ff"/>
+    <path d="M734 330A330 330 0 0 1 812 700" stroke="#30d158"/>
+  </g>
+  <path d="M512 300L600 640H424Z" fill="#fff"/>
+  <circle cx="512" cy="680" r="62" fill="#fff"/>
+  <circle cx="512" cy="680" r="26" fill="#0b0d12"/>
+</svg>
