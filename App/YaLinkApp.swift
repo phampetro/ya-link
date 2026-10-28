@@ -42,15 +42,22 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                dashSection
-                navigationSection
-                vehicleSection
-                tripSection
-                routingSection
-                photoSection
-                fieldTestSection
-                logSection
+            ScrollViewReader { proxy in
+                List {
+                    dashSection.id("dash")
+                    navigationSection.id("nav")
+                    vehicleSection.id("vehicle")
+                    tripSection.id("trip")
+                    routingSection.id("routing")
+                    photoSection.id("photo")
+                    fieldTestSection.id("test")
+                    logSection.id("log")
+                }
+                .onAppear {
+                    // Chỉ dùng cho CI chụp ảnh màn hình trên trình giả lập: YALINK_SECTION=trip cuộn tới mục đó
+                    guard let s = ProcessInfo.processInfo.environment["YALINK_SECTION"] else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { proxy.scrollTo(s, anchor: .top) }
+                }
             }
             .navigationTitle("Ya Link")
             .toolbar {

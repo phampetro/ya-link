@@ -73,6 +73,10 @@ final class DashLink: NSObject, ObservableObject {
         location.start()
         ccu.onLog = { [weak self] line in self?.add("CCU: \(line)") }
         ccu.start()
+        // Chỉ để chụp ảnh giao diện trên trình giả lập (CI)
+        let env = ProcessInfo.processInfo.environment
+        if env["YALINK_NAV"] == "1" { simulateNav = true }
+        if env["YALINK_CONFIRM"] == "1" { navigation.debugShowConfirm() }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidConnect, object: nil)
         nc.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidDisconnect, object: nil)

@@ -20,6 +20,42 @@ jobs:
           name: snapshots
           path: DashCore/snapshots
 
+  # Chạy app thật trên trình giả lập iPhone và chụp từng mục của giao diện app (xem ở artifact "ui-screenshots")
+  ui:
+    needs: vectors
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the Xcode project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build for the simulator
+        run: |
+          xcodebuild -project YaLink.xcodeproj -scheme YaLink -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath simbuild \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Run on a simulator and take screenshots
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -E "iPhone 1[5-9]( Pro)? \(" | head -1 | grep -oE '[0-9A-F-]{36}')
+          echo "simulator $UDID"
+          xcrun simctl boot "$UDID"; xcrun simctl bootstatus "$UDID" -b
+          APP=$(find simbuild -name YaLink.app | head -1)
+          xcrun simctl install "$UDID" "$APP"
+          for p in location-always photos media-library; do xcrun simctl privacy "$UDID" grant $p com.trongpm.yalink || true; done
+          mkdir shots
+          for s in dash nav vehicle trip routing photo test log; do
+            SIMCTL_CHILD_YALINK_SECTION=$s SIMCTL_CHILD_YALINK_NAV=1 xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
+            sleep 6
+            xcrun simctl io "$UDID" screenshot "shots/$s.png"
+          done
+          SIMCTL_CHILD_YALINK_CONFIRM=1 SIMCTL_CHILD_YALINK_NAV=1 xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
+          sleep 6
+          xcrun simctl io "$UDID" screenshot "shots/confirm.png"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-screenshots
+          path: shots
+
   app:
     needs: vectors
     runs-on: macos-latest

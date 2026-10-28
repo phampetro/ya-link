@@ -49,6 +49,11 @@ final class NavigationController: ObservableObject {
 
     var isActive: Bool { navigator != nil }
 
+    /// Hiện màn xác nhận với địa điểm mẫu (chỉ để chụp ảnh giao diện trên trình giả lập).
+    func debugShowConfirm() {
+        state = .confirm(Pending(name: "Chợ Bến Thành", point: GeoPoint(lat: 10.7725, lon: 106.6980)))
+    }
+
     // MARK: - Chia sẻ
 
     /// Chữ nhận từ tiện ích Chia sẻ (hoặc từ bộ nhớ tạm).
