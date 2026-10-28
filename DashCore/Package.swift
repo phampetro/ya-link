@@ -8,9 +8,13 @@ let package = Package(
     platforms: [.iOS(.v16), .macOS(.v13)],
     products: [
         .library(name: "DashCore", targets: ["DashCore"]),
+        .library(name: "DashRender", targets: ["DashRender"]),
     ],
     targets: [
         .target(name: "DashCore", path: "Sources/DashCore"),
+        // Bộ vẽ khung hình (CoreGraphics + CoreText, vẽ bằng CPU nên chạy được khi khoá máy)
+        .target(name: "DashRender", dependencies: ["DashCore"], path: "Sources/DashRender"),
+        .testTarget(name: "DashRenderTests", dependencies: ["DashRender"], path: "Tests/DashRenderTests"),
         .testTarget(
             name: "DashCoreTests",
             dependencies: ["DashCore"],

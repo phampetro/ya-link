@@ -7,3 +7,5 @@ DerivedData/
 *.ipa
 Payload/
 App/Info.plist
+DashCore/snapshots/
+DashCore/test.log
