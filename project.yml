@@ -14,11 +14,14 @@ targets:
     sources: [App]
     dependencies:
       - package: DashCore
+        product: DashCore
+      - package: DashCore
+        product: DashRender
     scheme: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.trongpm.yalink
-        MARKETING_VERSION: "0.1"
+        MARKETING_VERSION: "0.2"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
@@ -37,4 +40,5 @@ targets:
         UIBackgroundModes: [location, external-accessory, bluetooth-central]
         NSLocationWhenInUseUsageDescription: Dùng vị trí để dẫn đường và vẽ bản đồ trên đồng hồ xe.
         NSLocationAlwaysAndWhenInUseUsageDescription: Dùng vị trí khi điện thoại khoá trong túi để tiếp tục dẫn đường trên đồng hồ xe.
+        NSAppleMusicUsageDescription: Hiện tên bài và điều khiển Apple Music từ nút trên tay lái.
         NSBluetoothAlwaysUsageDescription: Kết nối với bộ CCU của xe để đọc nhiệt độ máy, điện áp ắc quy và ODO.

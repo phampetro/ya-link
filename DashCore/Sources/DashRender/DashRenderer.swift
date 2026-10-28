@@ -133,7 +133,8 @@ public struct DashRenderer {
                       normalFill: RGB? = nil, iconBox: CGFloat = 24, icon: (CGColor) -> Void) -> CGFloat {
         let vw = c.measure(value, size: 19, weight: .semibold)
         let uw = c.measure(unit, size: 16, weight: .medium)
-        let width = 5 + 19 + 3 + vw + 1 + uw + 8
+        let gap: CGFloat = unit.first?.isLetter == true ? 3 : 1   // "250 m", "12.8 V" nhưng "92°C"
+        let width = 5 + 19 + 3 + vw + gap + uw + 8
         let rect = CGRect(x: right - width, y: 5, width: width, height: 32)
         let fg: CGColor
         switch level {
@@ -153,7 +154,7 @@ public struct DashRenderer {
         c.inBox(iconBox, CGRect(x: rect.minX + 5, y: 11.5, width: 19, height: 19)) { icon(fg) }
         c.text(value, x: rect.minX + 27, y: 9.6, size: 19, weight: .semibold, color: fg)
         let unitColor = level == .normal && normalFill == nil ? RGB(161, 161, 168).cg() : fg
-        c.text(unit, x: rect.minX + 27 + vw + 1, y: 11.4, size: 16, weight: .medium, color: unitColor)
+        c.text(unit, x: rect.minX + 27 + vw + gap, y: 11.4, size: 16, weight: .medium, color: unitColor)
         return rect.minX
     }
 
