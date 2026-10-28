@@ -1,0 +1,9 @@
+# sinh ra trên máy build
+*.xcodeproj/
+build/
+.build/
+.swiftpm/
+DerivedData/
+*.ipa
+Payload/
+App/Info.plist

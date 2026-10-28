@@ -1,0 +1,34 @@
+name: build-ipa
+on: [push, workflow_dispatch]
+
+jobs:
+  # Chạy toàn bộ test vectors trước. Đỏ = chưa được ra xe.
+  vectors:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Vector tests (DashCore)
+        working-directory: DashCore
+        run: swift test
+
+  app:
+    needs: vectors
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the Xcode project
+        run: brew install xcodegen && xcodegen generate
+      - name: Build unsigned app
+        run: |
+          xcodebuild -project YaLink.xcodeproj -scheme YaLink -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package .ipa
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/YaLink.app Payload/
+          zip -qr YaLink.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YaLink-ipa
+          path: YaLink.ipa

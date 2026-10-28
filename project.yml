@@ -1,0 +1,38 @@
+# XcodeGen: máy Mac trên GitHub Actions sinh YaLink.xcodeproj từ file này (không viết tay project trên Windows).
+name: YaLink
+options:
+  bundleIdPrefix: com.trongpm
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  DashCore:
+    path: DashCore
+targets:
+  YaLink:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: DashCore
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trongpm.yalink
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Ya Link
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Link A (đồng hồ) và Link B (CCU)
+        UISupportedExternalAccessoryProtocols:
+          - com.garmin.navilite.data
+          - com.yconnect.data
+        UIBackgroundModes: [location, external-accessory, bluetooth-central]
+        NSLocationWhenInUseUsageDescription: Dùng vị trí để dẫn đường và vẽ bản đồ trên đồng hồ xe.
+        NSLocationAlwaysAndWhenInUseUsageDescription: Dùng vị trí khi điện thoại khoá trong túi để tiếp tục dẫn đường trên đồng hồ xe.
+        NSBluetoothAlwaysUsageDescription: Kết nối với bộ CCU của xe để đọc nhiệt độ máy, điện áp ắc quy và ODO.

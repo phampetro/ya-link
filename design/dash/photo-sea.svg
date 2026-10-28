@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" preserveAspectRatio="xMidYMid slice">
+  <!-- Ảnh mẫu cho khung ảnh: biển chiều, màu phẳng -->
+  <rect width="240" height="180" fill="#8fc7e8"/>
+  <rect y="0" width="240" height="50" fill="#a9d5ee"/>
+  <circle cx="170" cy="70" r="22" fill="#fff1c4"/>
+  <rect y="96" width="240" height="84" fill="#2f7fb5"/>
+  <rect y="96" width="240" height="14" fill="#4a97c8"/>
+  <path d="M0 140 Q60 128 120 140 T240 140 V180 H0 Z" fill="#f1d9a8"/>
+  <path d="M30 140 l14-26 14 26z" fill="#e05a47"/>
+</svg>
