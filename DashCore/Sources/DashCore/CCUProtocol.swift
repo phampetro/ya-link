@@ -248,7 +248,8 @@ public enum CCUMessage: Equatable {
         let cmd = UInt16(b[0]) << 8 | UInt16(b[1])
         switch cmd {
         case 258 where b.count >= 3: self = .authResult(accepted: b[2] == 1)
-        case 312 where b.count >= 3: self = .ignition(on: b[2] != 0)
+        // Tài liệu: 1 bật, 0 tắt. Giá trị khác chưa rõ nghĩa: không đoán, trả .other.
+        case 312 where b.count >= 3 && b[2] <= 1: self = .ignition(on: b[2] == 1)
         case 288 where b.count >= 6: self = .fuelCounter(le32(b, 2))
         case 309: self = .ping
         case 9: self = .askTime

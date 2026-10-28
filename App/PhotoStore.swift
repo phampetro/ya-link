@@ -1,14 +1,19 @@
 import CoreGraphics
 import DashRender
 import Foundation
+import UIKit
 
 /// Bộ ảnh nền: lưu trong Documents/backgrounds (đã thu nhỏ), tự đổi ảnh mỗi `interval` giây,
 /// ảnh mới hiện dần đè lên ảnh cũ trong 0,8 s. Enter ở trang chủ gọi `next`.
+/// Chưa chọn ảnh nào thì dùng 2 ảnh mặc định (biển, đồng cỏ).
 @MainActor
 final class PhotoStore: ObservableObject {
     static let fadeDuration: TimeInterval = 0.8
 
+    /// Số ảnh người dùng đã chọn (0 = đang dùng ảnh mặc định).
     @Published private(set) var count = 0
+    /// Ảnh nhỏ để hiện ở Cài đặt (ảnh đã chọn, hoặc ảnh mặc định).
+    @Published private(set) var thumbs: [UIImage] = []
     @Published var interval: TimeInterval = UserDefaults.standard.double(forKey: "bgInterval").nonZero ?? 8 {
         didSet { UserDefaults.standard.set(interval, forKey: "bgInterval") }
     }
@@ -24,12 +29,14 @@ final class PhotoStore: ObservableObject {
 
     func load() {
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        images = files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap {
+        let user = files.sorted { $0.lastPathComponent < $1.lastPathComponent }.compactMap {
             (try? Data(contentsOf: $0)).flatMap { ImageEncoder.load($0) }
         }
+        count = user.count
+        images = user.isEmpty ? DefaultPhotos.make() : user
+        thumbs = images.map { UIImage(cgImage: $0) }
         index = 0
         previous = nil
-        count = images.count
     }
 
     /// Thay toàn bộ bộ ảnh (từ PhotosPicker). Ảnh được thu nhỏ còn cạnh dài 960 px rồi lưu JPEG.

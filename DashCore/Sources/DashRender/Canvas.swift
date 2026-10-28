@@ -75,6 +75,18 @@ final class Canvas {
         ctx.strokePath()
     }
 
+    /// Viền hình chữ nhật (bo góc nếu `radius` > 0); nét nằm giữa mép.
+    func stroke(_ rect: CGRect, _ color: CGColor, width: CGFloat, radius: CGFloat = 0) {
+        ctx.setStrokeColor(color)
+        ctx.setLineWidth(width)
+        if radius > 0 {
+            ctx.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            ctx.strokePath()
+        } else {
+            ctx.stroke(rect)
+        }
+    }
+
     /// Vẽ trong một hệ toạ độ riêng (vd. icon thiết kế trong hộp 26×26) đặt vào `rect`.
     func inBox(_ box: CGFloat, _ rect: CGRect, _ body: () -> Void) {
         ctx.saveGState()

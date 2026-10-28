@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" preserveAspectRatio="xMidYMid slice">
+  <!-- Ảnh mẫu sáng: đồng cỏ nắng, trời xanh. Màu phẳng để JPEG nhẹ -->
+  <rect width="240" height="180" fill="#86d4ff"/>
+  <rect y="0" width="240" height="52" fill="#a6e0ff"/>
+  <rect y="52" width="240" height="30" fill="#c4ecff"/>
+  <circle cx="64" cy="48" r="22" fill="#fff6bd"/>
+  <g fill="#ffffff">
+    <ellipse cx="156" cy="40" rx="30" ry="9"/><ellipse cx="176" cy="33" rx="20" ry="9"/><ellipse cx="138" cy="35" rx="16" ry="7"/>
+    <ellipse cx="214" cy="70" rx="22" ry="7"/><ellipse cx="226" cy="64" rx="14" ry="6"/>
+    <ellipse cx="40" cy="86" rx="24" ry="6"/>
+  </g>
+  <path d="M0 108 Q60 84 120 100 T240 92 V180 H0 Z" fill="#8fe39d"/>
+  <path d="M0 128 Q70 104 140 122 T240 116 V180 H0 Z" fill="#5fcf7c"/>
+  <path d="M0 150 Q80 130 150 146 T240 140 V180 H0 Z" fill="#3dba62"/>
+  <path d="M98 180 Q112 154 130 146 Q142 142 148 138 L156 138 Q146 146 138 152 Q124 162 128 180 Z" fill="#f3e6c0"/>
+  <g fill="#ffd84d"><circle cx="30" cy="140" r="2.6"/><circle cx="52" cy="152" r="2.6"/><circle cx="196" cy="150" r="2.6"/><circle cx="214" cy="164" r="2.6"/><circle cx="76" cy="166" r="2.6"/></g>
+  <g fill="#ff7aa8"><circle cx="40" cy="160" r="2.4"/><circle cx="182" cy="164" r="2.4"/><circle cx="16" cy="156" r="2.4"/></g>
+</svg>

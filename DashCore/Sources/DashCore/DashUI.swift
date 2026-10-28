@@ -9,12 +9,23 @@ import Foundation
 ///   Enter: Home đổi ảnh nền · Nhạc phát/dừng · Bản đồ mở bản đồ (đang mở: về mức zoom mặc định)
 ///   Giữ Enter ở Nhạc: chế độ âm lượng, UP/DOWN ±10 %, tự đóng sau 3 s
 ///   Bản đồ đang mở: UP/DOWN thu phóng; Home thoát về màn bìa
+///   Giữ Enter khi bản đồ đang mở: menu bản đồ tự vẽ (Dừng chỉ đường / Về nhà / Đến công ty / Yêu thích),
+///     UP/DOWN chọn (xoay vòng), Enter xác nhận, Home quay lại/thoát, tự đóng sau 8 s
 ///   Home: từ bất kỳ trang nào về trang chủ (bản đồ đang mở thì lần 1 về màn bìa)
 public final class DashUI {
     public enum Page: Int, CaseIterable { case music = 0, home = 1, map = 2 }
     public enum Button { case up, down, enter, enterHold, home }
-    public enum Action: Equatable { case nextTrack, previousTrack, togglePlay, volume(Int), nextPhoto }
+    public enum Action: Equatable {
+        case nextTrack, previousTrack, togglePlay, volume(Int), nextPhoto
+        /// Người dùng chọn "Dừng chỉ đường" trong menu bản đồ (app dừng dẫn đường thật).
+        case stopNavigation
+        /// Người dùng chọn Nhà / Công ty / một nơi yêu thích (app tính tuyến và dẫn đường tới đó).
+        case navigate(SavedPlace)
+    }
 
+    public static let menuTimeout: TimeInterval = 8
+    public static let noteDuration: TimeInterval = 2.5
+    public static let menuVisibleRows = 4
     public static let doublePressWindow: TimeInterval = 0.4
     public static let wheelDuration: TimeInterval = 0.6
     public static let welcomeDuration: TimeInterval = 2.0
@@ -29,6 +40,12 @@ public final class DashUI {
     public var weather: WeatherInfo?
     /// Chữ thanh dưới ở trang chủ (ODO / TRIP 1 / TRIP 2 / OIL do app tính).
     public var homeBarText = ""
+    /// Nhà, Công ty, Yêu thích (app lưu, đưa vào đây để menu bản đồ dùng).
+    public var places = SavedPlaces()
+    /// Tên người dùng hiện ở màn chào (rỗng: chỉ có lời chào).
+    public var userName = ""
+    /// Tắt: `showWelcome` bỏ màn chào và vào thẳng Home.
+    public var greetingEnabled = true
 
     // Trạng thái
     public private(set) var rotation = 1          // bước bánh xe, không chia dư (để xoay vòng mượt)
@@ -43,6 +60,12 @@ public final class DashUI {
     private var mapHintUntil: TimeInterval = -100
     private var zoomHintUntil: TimeInterval = -100
     private var volumeUntil: TimeInterval = -100
+    /// Menu bản đồ (giữ Enter khi bản đồ mở); nil khi đóng.
+    public private(set) var menu: MapMenu?
+    public private(set) var menuChangedAt: TimeInterval = -100
+    private var menuUntil: TimeInterval = -100
+    private var noteText = ""
+    private var noteUntil: TimeInterval = -100
     private var pending: (button: Button, at: TimeInterval)?
     public private(set) var flash: (target: FlashTarget, at: TimeInterval)?
     public enum FlashTarget: Equatable { case next, previous, play }
@@ -55,6 +78,7 @@ public final class DashUI {
 
     public func press(_ button: Button, now: TimeInterval) -> [Action] {
         if inWelcome(now) { return [] }
+        if menu != nil { return pressMenu(button, now: now) }
         switch button {
         case .up, .down:
             let dir = button == .up ? -1 : 1
@@ -99,6 +123,8 @@ public final class DashUI {
             if page == .music {
                 volumeMode = true
                 volumeUntil = now + 3
+            } else if page == .map && mapOpen {
+                setMenu(MapMenu(level: .main, index: 0), now: now)
             }
             return []
 
@@ -125,6 +151,7 @@ public final class DashUI {
             actions += resolvePending(p, now: now)
         }
         if volumeMode && now > volumeUntil { volumeMode = false }
+        if menu != nil && now > menuUntil { closeMenu(now: now) }
         if let a = arrivedAt, now - a >= Self.arrivalDuration {
             arrivedAt = nil
             mapOpen = false
@@ -135,10 +162,15 @@ public final class DashUI {
     }
 
     /// Đồng hồ vừa cho hiện màn hình app (lệnh 55 lần đầu): màn chào 2 s rồi vào Home.
+    /// `greetingEnabled == false`: bỏ màn chào, vào thẳng Home (hiệu ứng trượt vào chạy ngay).
     public func showWelcome(now: TimeInterval) {
-        welcomeStart = now
+        welcomeStart = greetingEnabled ? now : now - Self.welcomeDuration
         mapOpen = false
+        mapToggledAt = -100
         volumeMode = false
+        pending = nil
+        menu = nil
+        menuChangedAt = now
         if page != .home { rotation += Page.home.rawValue - page.rawValue; rotationFrom = Double(rotation) }
     }
 
@@ -146,6 +178,8 @@ public final class DashUI {
     public func startNavigation(_ info: NavInfo, now: TimeInterval) {
         nav = info
         arrivedAt = nil
+        menu = nil
+        menuChangedAt = now
         if page != .map { rotate(by: Page.map.rawValue - page.rawValue, now: now) }
         openMap(now: now)
     }
@@ -159,6 +193,7 @@ public final class DashUI {
         arrivedDestination = nav?.destination ?? ""
         arrivedAt = now
         nav = nil
+        if menu != nil { closeMenu(now: now) }
     }
 
     public func showingArrival(_ now: TimeInterval) -> Bool {
@@ -167,6 +202,125 @@ public final class DashUI {
 
     public func cancelNavigation() {
         nav = nil
+    }
+
+    // MARK: - Menu bản đồ
+
+    /// Các dòng của menu đang mở (rỗng nếu menu đóng).
+    public func menuItems() -> [MapMenu.Item] {
+        guard let m = menu else { return [] }
+        switch m.level {
+        case .favorites:
+            var items = [MapMenu.Item(kind: .back, label: "Quay lại", sub: nil, icon: .back)]
+            if places.favs.isEmpty {
+                items.append(MapMenu.Item(kind: .empty, label: "Chưa có yêu thích", sub: nil, icon: .star, off: true))
+            } else {
+                for (i, f) in places.favs.enumerated() {
+                    items.append(MapMenu.Item(kind: .favorite(i), label: f.name, sub: f.sub, icon: .star))
+                }
+            }
+            return items
+        case .main:
+            var items: [MapMenu.Item] = []
+            if nav != nil {
+                items.append(MapMenu.Item(kind: .stop, label: "Dừng chỉ đường", sub: nil, icon: .stop, danger: true))
+            }
+            items.append(MapMenu.Item(kind: .home, label: "Về nhà", sub: places.home?.sub ?? "Chưa đặt", icon: .home,
+                                      off: places.home == nil))
+            items.append(MapMenu.Item(kind: .work, label: "Đến công ty", sub: places.work?.sub ?? "Chưa đặt", icon: .work,
+                                      off: places.work == nil))
+            items.append(MapMenu.Item(kind: .favorites, label: "Yêu thích",
+                                      sub: places.favs.isEmpty ? "Chưa có" : "\(places.favs.count) nơi", icon: .star,
+                                      chevron: true))
+            return items
+        }
+    }
+
+    /// Dòng đầu tiên trong cửa sổ 4 dòng nhìn thấy (dòng chọn nằm thứ 2 khi cuộn).
+    public static func menuWindowStart(index: Int, count: Int) -> Int {
+        max(0, min(count - menuVisibleRows, index - 1))
+    }
+
+    private func setMenu(_ m: MapMenu?, now: TimeInterval) {
+        menu = m
+        menuChangedAt = now
+        menuUntil = now + Self.menuTimeout
+    }
+
+    private func closeMenu(now: TimeInterval) {
+        menu = nil
+        menuChangedAt = now
+    }
+
+    private func setNote(_ text: String, now: TimeInterval) {
+        noteText = text
+        noteUntil = now + Self.noteDuration
+    }
+
+    private func pressMenu(_ button: Button, now: TimeInterval) -> [Action] {
+        guard let m = menu else { return [] }
+        switch button {
+        case .up, .down:
+            let n = menuItems().count
+            guard n > 0 else { return [] }
+            var next = m
+            next.index = (((m.index + (button == .up ? -1 : 1)) % n) + n) % n
+            setMenu(next, now: now)
+            return []
+        case .enter:
+            return selectMenuItem(now: now)
+        case .enterHold:
+            menuUntil = now + Self.menuTimeout
+            return []
+        case .home:
+            menuBack(now: now)
+            return []
+        }
+    }
+
+    private func menuBack(now: TimeInterval) {
+        if let m = menu, m.level == .favorites {
+            setMenu(MapMenu(level: .main, index: 0), now: now)
+        } else {
+            closeMenu(now: now)
+        }
+    }
+
+    private func selectMenuItem(now: TimeInterval) -> [Action] {
+        let items = menuItems()
+        guard let m = menu, m.index >= 0, m.index < items.count else { return [] }
+        switch items[m.index].kind {
+        case .stop:
+            nav = nil
+            closeMenu(now: now)
+            setNote("Đã dừng chỉ đường", now: now)
+            return [.stopNavigation]
+        case .home:
+            return go(places.home, missing: "Chưa đặt nhà", now: now)
+        case .work:
+            return go(places.work, missing: "Chưa đặt công ty", now: now)
+        case .favorites:
+            setMenu(MapMenu(level: .favorites, index: places.favs.isEmpty ? 0 : 1), now: now)
+            return []
+        case .favorite(let i):
+            guard places.favs.indices.contains(i) else { return [] }
+            return go(places.favs[i], missing: "", now: now)
+        case .back:
+            menuBack(now: now)
+            return []
+        case .empty:
+            return []
+        }
+    }
+
+    private func go(_ place: SavedPlace?, missing: String, now: TimeInterval) -> [Action] {
+        closeMenu(now: now)
+        guard let p = place else {
+            setNote(missing, now: now)
+            return []
+        }
+        setNote("Đi tới \(p.name)", now: now)
+        return [.navigate(p)]
     }
 
     private func resolvePending(_ p: (button: Button, at: TimeInterval), now: TimeInterval) -> [Action] {
@@ -218,6 +372,8 @@ public final class DashUI {
             || now - mapToggledAt < 0.7
             || (welcomeStart.map { now - $0 < Self.welcomeDuration + 1.2 } ?? false)
             || (flash.map { now - $0.at < 0.45 } ?? false)
+            || menu != nil
+            || now - menuChangedAt < 0.6
     }
 
     public func bottomBarText(now: TimeInterval) -> String {
@@ -225,11 +381,14 @@ public final class DashUI {
         if showingArrival(now) { return "Đã tới \(arrivedDestination)" }
         if let n = nav, n.distanceToTurnM < 100, !mapOpen { return n.maneuver.prompt(n.nextStreet) }
         switch page {
-        case .music: return "LƯU Ý LÁI XE AN TOÀN"
+        case .music: return "Giữ Enter để tăng/giảm âm lượng"
         case .home: return homeBarText
         case .map:
+            if menu != nil { return "▲▼ chọn · Enter xác nhận · Home thoát" }
+            if now < noteUntil { return noteText }
             if mapOpen && now < mapHintUntil { return "+/- thu phóng · Home để thoát" }
             if mapOpen && now < zoomHintUntil { return "Thu phóng · \(Self.zoomLabels[zoom])" }
+            if !mapOpen && nav == nil { return "Chia sẻ vị trí từ Google Maps" }   // màn bìa, chưa chỉ đường
             return nav?.currentStreet ?? homeBarText
         }
     }
@@ -260,6 +419,70 @@ public final class DashUI {
 
     public static func greeting(hour: Int) -> String {
         hour < 11 ? "Chào buổi sáng" : hour < 14 ? "Chào buổi trưa" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối"
+    }
+}
+
+/// Một nơi đã lưu (Nhà, Công ty hoặc yêu thích).
+public struct SavedPlace: Equatable, Codable, Identifiable {
+    public var id: String { name + sub }
+    public var name: String
+    public var sub: String
+    public var lat: Double
+    public var lon: Double
+    public init(name: String, sub: String, lat: Double, lon: Double) {
+        self.name = name
+        self.sub = sub
+        self.lat = lat
+        self.lon = lon
+    }
+    private enum CodingKeys: String, CodingKey { case name, sub, lat, lon }
+}
+
+public struct SavedPlaces: Equatable, Codable {
+    public var home: SavedPlace?
+    public var work: SavedPlace?
+    public var favs: [SavedPlace]
+    public init(home: SavedPlace? = nil, work: SavedPlace? = nil, favs: [SavedPlace] = []) {
+        self.home = home
+        self.work = work
+        self.favs = favs
+    }
+}
+
+/// Trạng thái menu bản đồ (giữ Enter khi bản đồ mở). Dòng hiển thị lấy từ `DashUI.menuItems()`.
+public struct MapMenu: Equatable {
+    public enum Level: Equatable { case main, favorites }
+    public enum Icon: Equatable { case stop, home, work, star, back }
+    public enum Kind: Equatable { case stop, home, work, favorites, favorite(Int), back, empty }
+
+    public struct Item: Equatable {
+        public var kind: Kind
+        public var label: String
+        public var sub: String?
+        public var icon: Icon
+        /// Mờ (chưa đặt / chưa có).
+        public var off: Bool
+        /// Đỏ (Dừng chỉ đường).
+        public var danger: Bool
+        /// Có mũi tên › (mở danh sách con).
+        public var chevron: Bool
+        public init(kind: Kind, label: String, sub: String?, icon: Icon, off: Bool = false, danger: Bool = false,
+                    chevron: Bool = false) {
+            self.kind = kind
+            self.label = label
+            self.sub = sub
+            self.icon = icon
+            self.off = off
+            self.danger = danger
+            self.chevron = chevron
+        }
+    }
+
+    public var level: Level
+    public var index: Int
+    public init(level: Level, index: Int) {
+        self.level = level
+        self.index = index
     }
 }
 

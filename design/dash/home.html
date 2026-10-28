@@ -59,8 +59,13 @@
   .welcome { position: absolute; inset: 0 0 48px 0; display: none; place-items: center; text-align: center; }
   .welcome.on { display: grid; }
   .welcome > div { display: grid; justify-items: center; gap: 6px; }
-  .welcome svg { width: 44px; height: 44px; }
-  .welcome .hi { font: 600 30px/36px var(--font); letter-spacing: -0.01em; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+  .welcome > div { gap: 0; max-width: 340px; }   /* x 70–410: chừa chỗ cho nút ＋/－ (x < 56) */
+  .welcome svg { width: 64px; height: 64px; margin-bottom: 6px; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5)); }
+  .welcome .hi { font: 500 22px/26px var(--font); color: #e6e6e6; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
+  .welcome .hi.solo { font: 600 32px/38px var(--font); color: #fff; }
+  .welcome .who { font: 700 40px/46px var(--font); letter-spacing: -0.01em; max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+  .welcome .who:empty { display: none; }
+  .welcome .sub { margin-top: 6px; }
   .welcome .sub { font: 500 17px/22px var(--font); color: #e6e6e6; text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6); }
   /* Biển tốc độ: app TỰ VẼ vào ảnh (góc trên phải, nhỏ) thay vì dùng biển của đồng hồ, vì biển của đồng hồ
      cố định ở góc dưới phải (x 411, y 135, 62 px) và không đổi chỗ/cỡ được. App gửi cmd 17 limit 0 để tắt biển gốc.
@@ -106,6 +111,7 @@
   .map { background: #0a0c0a; }
   .map svg.mapsvg { position: absolute; inset: 0; width: 480px; height: 240px; }
   .mapview { display: none; }
+  .mapview.nonav .turn, .mapview.nonav .eta, .mapview.nonav .msign { display: none; }
   .map.open .mapview { display: block; }
   .map.open .mapcover { display: none; }
   .map:not(.open) { background: linear-gradient(rgba(var(--pc), 0.12), rgba(var(--pc), 0.12)), rgba(0, 0, 0, 0.55); }
@@ -136,6 +142,105 @@
   .ctl h2 { grid-column: 1 / -1; margin: 0 0 4px; font-size: 15px; color: #a1a1a8; font-weight: 600; }
   .ctl .btns { display: flex; gap: 8px; }
   .ctl button { flex: 1; padding: 6px 0; font: 600 14px/1 system-ui, sans-serif; }
+
+  /* ===== Liquid Glass cho màn hình đồng hồ =====
+     Bố cục giữ nguyên. Kính = làm mờ phần ảnh nền phía sau + lớp trắng mờ có chuyển sắc + viền sáng ở mép trên.
+     Trong app Swift: làm mờ bằng cách thu nhỏ vùng ảnh nền rồi phóng lại (rẻ trên CPU), phủ chuyển sắc và vẽ viền sáng. */
+  :root { --lg-fill: linear-gradient(160deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.10) 55%, rgba(255, 255, 255, 0.20));
+          --lg-rim: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(255, 255, 255, 0.14), 0 0 0 1px rgba(255, 255, 255, 0.24), 0 5px 14px rgba(0, 0, 0, 0.3); }
+
+  /* thanh trên: viên kính nổi */
+  .strip { left: 5px; right: 5px; top: 3px; height: 36px; border-radius: 18px; background: linear-gradient(rgba(var(--pc), 0.2), rgba(var(--pc), 0.2)), var(--lg-fill);
+    backdrop-filter: blur(9px) saturate(170%); -webkit-backdrop-filter: blur(9px) saturate(170%); box-shadow: var(--lg-rim); }
+  .top { left: 13px; right: 13px; top: 5px; height: 32px; }
+  .chip { height: 28px; border-radius: 14px; padding: 0 9px 0 6px; background: linear-gradient(160deg, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0.10)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.2); }
+  .chip small { color: #e4e8f0; }
+  .chip.navchip { background: linear-gradient(180deg, rgba(120, 235, 150, 0.95), rgba(40, 190, 85, 0.95)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.25); }
+  .chip.navchip.near, .chip.warn { background: linear-gradient(180deg, #ffd75e, #f5a800); color: #000; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.25); }
+  .chip.navchip.now, .chip.bad { background: linear-gradient(180deg, #ff6b61, #e0201b); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.25); }
+  .chip.navchip small, .chip.navchip.now small, .chip.bad small { color: #fff; }
+  .chip.navchip.near small, .chip.warn small { color: #000; }
+
+  /* menu phải: ô kính màu có vệt sáng */
+  .menu i { overflow: hidden; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.3), 0 5px 12px rgba(0, 0, 0, 0.32); }
+  .menu i::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(160deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 48%); pointer-events: none; }
+
+  /* màn chào: nội dung đặt trên một tấm kính */
+  .welcome > div { box-sizing: border-box; padding: 10px 24px 12px; border-radius: 26px; background: var(--lg-fill); backdrop-filter: blur(10px) saturate(160%); -webkit-backdrop-filter: blur(10px) saturate(160%); box-shadow: var(--lg-rim); }
+
+  /* trang Nhạc */
+  .art { background: linear-gradient(160deg, rgba(var(--pc), 0.75), rgba(var(--pc), 0.35)); border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.28), 0 8px 18px rgba(0, 0, 0, 0.35); }
+  .mbtn { background: var(--lg-fill); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: var(--lg-rim); }
+  .mbtn.flash, .play.flash { background: linear-gradient(180deg, rgba(var(--pc), 0.95), rgba(var(--pc), 0.7)); }
+  .play { background: linear-gradient(160deg, rgba(255, 255, 255, 0.45), rgba(var(--pc), 0.9) 60%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.3), 0 6px 16px rgba(var(--pc), 0.45); }
+  .vol { background: var(--lg-fill); box-shadow: var(--lg-rim); }
+  .prog .track { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35); }
+  .prog .track div { border-radius: 4px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgb(var(--pc)) 55%); box-shadow: 0 0 10px rgba(var(--pc), 0.6); }
+
+  /* trang Bản đồ */
+  .turn { height: 52px; border-radius: 16px; background: linear-gradient(160deg, rgba(40, 46, 58, 0.7), rgba(20, 24, 32, 0.6)); backdrop-filter: blur(10px) saturate(160%); -webkit-backdrop-filter: blur(10px) saturate(160%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.2), 0 5px 14px rgba(0, 0, 0, 0.4); }
+  .turn i { border-radius: 14px; background: linear-gradient(160deg, rgba(255, 255, 255, 0.55), rgb(var(--pc)) 55%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6); }
+  .turn.near i { background: linear-gradient(160deg, #fff1b0, #f5a800 60%); }
+  .turn.now i { background: linear-gradient(160deg, #ffb0aa, #e0201b 60%); }
+  .eta { border-radius: 15px; background: linear-gradient(160deg, rgba(40, 46, 58, 0.7), rgba(20, 24, 32, 0.6)); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 12px rgba(0, 0, 0, 0.4); }
+  .mapcover i { border-radius: 24px; background: linear-gradient(160deg, rgba(255, 255, 255, 0.6), rgb(var(--pc)) 55%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.3), 0 8px 22px rgba(var(--pc), 0.5); }
+
+  /* tương phản trên ảnh nền sáng: lớp tối nhẹ dưới kính, chữ trắng có bóng */
+  .strip { background: linear-gradient(rgba(var(--pc), 0.22), rgba(var(--pc), 0.22)), linear-gradient(rgba(8, 16, 36, 0.34), rgba(8, 16, 36, 0.34)), var(--lg-fill); }
+  .weather b, .weather span, .chip { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55); }
+  .weather span { color: #fff; font-weight: 600; }
+  .chip small { color: #fff; opacity: 0.85; }
+
+  /* màn chào gọn hơn để tấm kính nằm gọn trong vùng y 0–186 */
+  .welcome > div { padding: 8px 24px 10px; }
+  .welcome svg { width: 52px; height: 52px; margin-bottom: 2px; }
+  .welcome .hi { line-height: 24px; }
+  .welcome .who { font-size: 38px; line-height: 42px; }
+  .welcome .sub { margin-top: 2px; }
+
+  .welcome .who { line-height: 46px; padding-bottom: 3px; }   /* không cắt dấu chấm dưới chữ ọ */
+
+  /* ===== Thanh trên: phẳng, KHÔNG dùng kính (đặt cuối để thắng các khối kính ở trên) ===== */
+  .strip { left: 0; right: 0; top: 0; height: 42px; border-radius: 0; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none;
+    background: linear-gradient(rgba(var(--pc), var(--tint, 0.35)), rgba(var(--pc), var(--tint, 0.35))), rgba(0, 0, 0, var(--glass, 0.45)); }
+  .top { left: 8px; right: 8px; top: 5px; height: 32px; }
+  .weather b, .weather span, .chip { text-shadow: none; }
+  .weather span { color: #e0e0e0; font-weight: 500; }
+  .chip { height: 32px; border-radius: 8px; padding: 0 8px 0 5px; box-shadow: none;
+    background: linear-gradient(rgba(var(--pc), 0.32), rgba(var(--pc), 0.32)), rgba(0, 0, 0, 0.55); }
+  .chip small { color: var(--d-muted); opacity: 1; }
+  .chip.navchip { background: rgb(48, 209, 88); color: #fff; }
+  .chip.navchip.near, .chip.warn { background: var(--d-warn); color: #000; }
+  .chip.navchip.now, .chip.bad { background: #e0201b; color: #fff; }
+  .chip.navchip small, .chip.navchip.now small, .chip.bad small { color: #fff; }
+  .chip.navchip.near small, .chip.warn small { color: #000; }
+
+  .chip.navchip, .chip.navchip.near, .chip.navchip.now, .chip.warn, .chip.bad { box-shadow: none; }
+
+  /* ===== Menu bản đồ (giữ Enter khi bản đồ đang mở) =====
+     Tấm kính nằm trong x 74–406, y 14–170: chừa nút ＋/－ (x < 56) và thanh dưới (y ≥ 186). Chữ ≥ 16 px. */
+  .mapmenu { display: none; position: absolute; left: 74px; top: 14px; width: 332px; padding: 6px; box-sizing: border-box; border-radius: 22px; z-index: 6;
+    background: linear-gradient(160deg, rgba(48, 54, 68, 0.78), rgba(22, 26, 34, 0.72)); backdrop-filter: blur(12px) saturate(160%); -webkit-backdrop-filter: blur(12px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.22), 0 8px 22px rgba(0, 0, 0, 0.5); }
+  .mapview.menuopen .mapmenu { display: block; }
+  .mapview.menuopen .turn, .mapview.menuopen .eta, .mapview.menuopen .msign { display: none; }
+  .mi { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px 0 8px; border-radius: 16px; color: #fff; }
+  .mi .mic { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: rgba(255, 255, 255, 0.14); }
+  .mi .mic svg { width: 17px; height: 17px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .mi b { flex: 1; min-width: 0; font: 600 19px/1.3 var(--font); padding-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mi small { flex: none; font: 500 16px/1.3 var(--font); color: #c4c9d4; }
+  .mi em { flex: none; font: 600 22px/1 var(--font); font-style: normal; color: #c4c9d4; margin-left: -4px; }
+  .mi.off b, .mi.off .mic { opacity: 0.5; }
+  .mi.danger b { color: #ff7a72; }
+  .mi.danger .mic { background: rgba(224, 32, 27, 0.55); }
+  .mi.sel { background: linear-gradient(160deg, rgba(255, 255, 255, 0.34), rgba(var(--pc), 0.62)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.3); }
+  .mi.sel small, .mi.sel em { color: #fff; }
+  .mi.sel.danger { background: linear-gradient(160deg, rgba(255, 160, 150, 0.5), rgba(224, 32, 27, 0.8)); }
+  .mi.sel.danger b { color: #fff; }
+
+  /* ===== Màn chào: KHÔNG khung kính, chữ và logo nằm thẳng trên ảnh nền đã làm tối ===== */
+  .welcome > div { padding: 0; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .welcome svg { width: 60px; height: 60px; margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -174,8 +279,10 @@
 
   <div class="welcome" id="welcome">
     <div data-keep="welcome">
-      <svg viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="19" fill="none" stroke="rgb(var(--pc))" stroke-width="3.5"/><path d="M13 29l9-15 9 15" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div class="hi" id="hi">Chào buổi sáng</div>
+      <!-- Logo Ya Link: đồng hồ tốc độ 3 màu (Nhạc hồng, Home xanh dương, Bản đồ xanh lá), kim trắng -->
+      <svg viewBox="140 205 744 620" aria-hidden="true"><defs><linearGradient id="yw-pink" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffa3b8"/><stop offset="1" stop-color="#ff2d55"/></linearGradient><linearGradient id="yw-blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9bd6ff"/><stop offset="1" stop-color="#0a7aff"/></linearGradient><linearGradient id="yw-green" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9cf4b0"/><stop offset="1" stop-color="#22b857"/></linearGradient><linearGradient id="yw-needle" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ffffff" stop-opacity="0.55"/></linearGradient><filter id="yw-sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity="0.38"/></filter></defs><g filter="url(#yw-sh)"><path d="M226.2 765.0A330 330 0 0 1 282.8 362.6" fill="none" stroke="url(#yw-pink)" stroke-width="92" stroke-linecap="round"/><path d="M318.0 333.0A330 330 0 0 1 706.0 333.0" fill="none" stroke="url(#yw-blue)" stroke-width="92" stroke-linecap="round"/><path d="M741.2 362.6A330 330 0 0 1 797.8 765.0" fill="none" stroke="url(#yw-green)" stroke-width="92" stroke-linecap="round"/></g><path d="M196.8 740.3A345 345 0 0 1 247.7 378.2" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="9" stroke-linecap="round"/><path d="M217.9 707.1A313 313 0 0 1 258.8 416.0" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="5" stroke-linecap="round"/><path d="M339.5 301.2A345 345 0 0 1 684.5 301.2" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="9" stroke-linecap="round"/><path d="M374.8 318.7A313 313 0 0 1 649.2 318.7" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="5" stroke-linecap="round"/><path d="M776.3 378.2A345 345 0 0 1 827.2 740.3" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="9" stroke-linecap="round"/><path d="M765.2 416.0A313 313 0 0 1 806.1 707.1" fill="none" stroke="#fff" stroke-opacity="0.18" stroke-width="5" stroke-linecap="round"/><g filter="url(#yw-sh)"><path d="M512 280L564 520Q565 534 551 534L473 534Q459 534 460 520Z" fill="url(#yw-needle)" stroke="#fff" stroke-opacity="0.92" stroke-width="8" stroke-linejoin="round"/><path d="M512 322L481 500" stroke="#fff" stroke-opacity="0.7" stroke-width="6" stroke-linecap="round"/></g><circle cx="512" cy="700" r="50" fill="#fff" fill-opacity="0.16" stroke="#fff" stroke-opacity="0.9" stroke-width="8"/><circle cx="512" cy="700" r="15" fill="#fff"/></svg>
+      <div class="hi" id="hi">Chào buổi sáng,</div>
+      <div class="who" id="who">Trọng</div>
       <div class="sub">Máy 92°C · Ắc quy 12.8 V · Sẵn sàng</div>
     </div>
   </div>
@@ -223,6 +330,7 @@
       </div>
       <div class="eta" data-keep="giờ đến">14:42 <span>· 7,0 km</span></div>
       <div class="msign" id="msign" data-keep="biển tốc độ">60</div>
+      <div class="mapmenu" id="mapmenu" data-keep="menu bản đồ"></div>
     </div>
   </section>
 
@@ -240,13 +348,14 @@
   <h2>Chỉnh thử (chỉ có trong mockup)</h2>
   <label>Khởi động</label>
   <div class="full btns"><button type="button" id="intro">⏻ Giả lập: mở máy rồi bấm Home</button></div>
+  <label>Lời chào</label><label class="full"><input type="checkbox" id="greeton" checked> Bật · tên: <input type="text" id="greetname" value="Trọng" style="width:120px"></label>
   <label>Nút tay lái</label>
   <div class="full btns"><button type="button" id="up">▲ UP</button><button type="button" id="mid">● Enter</button><button type="button" id="midhold">● Giữ Enter</button><button type="button" id="down">▼ DOWN</button><button type="button" id="homebtn">⌂ Home</button></div>
   <label></label>
   <div class="full" style="color:#a1a1a8">Bàn phím: ↑ ↓, Enter (giữ ≥ 0,6 giây = ấn giữ), H = Home. Bấm 2 lần trong 0,4 giây = bấm đúp.<br>Trang Nhạc: đúp ↑ bài sau · đúp ↓ bài trước · Enter phát/dừng · giữ Enter rồi ↑ ↓ chỉnh âm lượng<br>Trang Bản đồ: Enter vào chế độ bản đồ (ẩn menu, ↑ ↓ thu phóng, Enter về mức mặc định) · Home thoát</div>
   <label>Giả lập đồng hồ</label><label class="full"><input type="checkbox" id="fps4"> Chỉ ~4 khung/giây như trên xe</label>
   <label>Biển tốc độ</label><label class="full"><input type="checkbox" id="limit" checked> Hiện ở trang bản đồ (khi có dữ liệu)</label>
-  <label>Chỉ đường</label><label class="full"><input type="checkbox" id="navon" checked> Đang dẫn đường (có chuyến đi)</label>
+  <label>Chỉ đường</label><label class="full"><input type="checkbox" id="navon"> Đang dẫn đường (có chuyến đi)</label>
   <label>Hướng rẽ</label>
   <select class="full" id="man"><option value="right">Rẽ phải</option><option value="left">Rẽ trái</option><option value="straight">Đi thẳng</option><option value="uturn">Quay đầu</option><option value="round">Vòng xoay</option></select>
   <label>Còn tới chỗ rẽ</label><input type="range" id="dist" min="0" max="2000" step="10" value="250"><output id="disto"></output>
@@ -365,11 +474,21 @@
   const easeOut = (x) => 1 - Math.pow(1 - clamp01(x), 3);
   const greeting = () => { const h = new Date().getHours(); return h < 11 ? "Chào buổi sáng" : h < 14 ? "Chào buổi trưa" : h < 18 ? "Chào buổi chiều" : "Chào buổi tối"; };
 
+  // Lời chào: bật/tắt và tên người dùng do app đặt (postMessage từ mockup app); tắt thì vào thẳng Home, bỏ màn chào
+  let welcomeOn = true, userName = "Trọng";
+  function fillWelcome() {
+    const nm = userName.trim();
+    $("hi").textContent = nm ? greeting() + "," : greeting();
+    $("hi").classList.toggle("solo", !nm);
+    $("who").textContent = nm;
+  }
+
   function playIntro() {
     rot = from = 1;                     // luôn vào Home
-    $("hi").textContent = greeting();
+    fillWelcome();
     render();
-    introT0 = performance.now();
+    introT0 = performance.now() - (welcomeOn ? 0 : 2000);   // tắt lời chào: nhảy thẳng tới phần trượt vào
+    $("welcome").style.display = welcomeOn ? "" : "none";
     applyIntro(introT0);
     requestAnimationFrame(introTick);
   }
@@ -391,7 +510,7 @@
       render();
       return;
     }
-    const w = el < 300 ? el / 300 : 1 - clamp01((el - 2000) / 500);
+    const w = !welcomeOn ? 0 : el < 300 ? el / 300 : 1 - clamp01((el - 2000) / 500);
     $("welcome").classList.add("on");
     $("welcome").style.opacity = w.toFixed(2);
     const dim = +$("dim").value;
@@ -402,7 +521,7 @@
     $("frame").style.setProperty("--fo", easeOut((el - 2500) / 800).toFixed(2)); // viền sáng dần cùng menu
     drawWheel(rot);
     const bar = document.querySelector(".chrome .bar");
-    if (bar) bar.textContent = el < 3000 ? "Chúc thượng lộ bình an" : barText[$("bar").value];
+    if (bar) bar.textContent = welcomeOn && el < 3000 ? "Chúc thượng lộ bình an" : barText[$("bar").value];
   }
 
   function render() {
@@ -412,7 +531,7 @@
     drawWheel(wheelRot(performance.now()));
     // Thanh dưới (cmd 3, gửi lại mỗi khi đổi trang): trang Nhạc luôn nhắc an toàn, trang khác theo lựa chọn
     const bar = document.querySelector(".chrome .bar");
-    if (bar) bar.textContent = turnPrompt() ?? (page() === "music" ? "LƯU Ý LÁI XE AN TOÀN" : page() === "map" ? mapBar() : barText[$("bar").value]);
+    if (bar) bar.textContent = turnPrompt() ?? (page() === "music" ? "Giữ Enter để tăng/giảm âm lượng" : page() === "map" ? mapBar() : barText[$("bar").value]);
 
     // Bản đồ: biểu tượng hướng rẽ và khoảng cách (≥ 1 km ghi km, dưới 1 km làm tròn 10 m)
     const turnPaths = {
@@ -433,13 +552,15 @@
 
     // Đang chỉ đường: ô xanh lá ở trang chủ (cạnh ô nhiệt độ) + màn bìa Bản đồ ghi chuyến đi
     const nav = $("navon").checked;
+    document.querySelector(".mapview").classList.toggle("nonav", !nav);
+    if (mapMode) drawMap();   // không dẫn đường: chỉ mũi tên vị trí; có dẫn đường: thêm tuyến, điểm đến
     $("navchip").classList.toggle("off", !nav);
     $("navchip").classList.toggle("near", d >= 100 && d < 500);
     $("navchip").classList.toggle("now", d < 100);
     $("navicon").innerHTML = `<path d="${turnPaths[$("man").value]}" fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>`;
     $("navd").textContent = dn;
     $("navu").textContent = du;
-    $("covert").textContent = nav ? "Tới Chợ Bến Thành" : "Chưa chỉ đường";
+    $("covert").textContent = nav ? "Tới " + destName : "Chưa chỉ đường";
     $("coverd").textContent = nav ? "7,0 km · đến lúc 14:42" : "Chia sẻ địa điểm từ Google Maps";
 
     const [label, svg] = icons[$("wkind").value];
@@ -483,6 +604,7 @@
   // Âm lượng: giữ Enter mở, ＋/－ (UP/DOWN) tăng/giảm 10%, tự đóng sau 3 s không bấm hoặc bấm Enter
   let volMode = false, volume = 60, volTimer = null;
   function openVol() {
+    if (page() === "map" && mapMode) return openMenu();   // giữ Enter ở bản đồ đang mở: menu
     if (page() !== "music") return;
     volMode = true;
     armVol();
@@ -573,9 +695,12 @@
     // đường lớn
     s += `<path d="${W.majors.map((m) => line(...m)).join("")}" stroke="#383c38" stroke-width="${wMaj}"/>`;
     // tuyến: đã qua (xám) + còn lại (màu trang)
-    const pts = W.route.map(([x, y]) => `${X(x)} ${Y(y)}`);
-    s += `<path d="M${pts.slice(0, 2).join("L")}" stroke="#5a5d5a" stroke-width="${wRoute}"/>`;
-    s += `<path d="M${pts.slice(1).join("L")}" stroke="rgb(var(--pc))" stroke-width="${wRoute}"/>`;
+    const navOn = $("navon").checked;
+    if (navOn) {
+      const pts = W.route.map(([x, y]) => `${X(x)} ${Y(y)}`);
+      s += `<path d="M${pts.slice(0, 2).join("L")}" stroke="#5a5d5a" stroke-width="${wRoute}"/>`;
+      s += `<path d="M${pts.slice(1).join("L")}" stroke="rgb(var(--pc))" stroke-width="${wRoute}"/>`;
+    }
     s += `</g>`;
 
     // nhãn: chỉ vẽ khi không đè vùng cấm (nút ＋/－, thanh dưới, ô rẽ, giờ đến ở giữa, biển tốc độ góc phải)
@@ -592,14 +717,14 @@
     let t = "";
     // điểm đến (luôn cố hiện nếu nằm trong khung)
     const [dx, dy, dname] = W.dest;
-    if (X(dx) < 470 && Y(dy) > 8) {
+    if (navOn && X(dx) < 470 && Y(dy) > 8) {
       t += `<path d="M${X(dx)} ${Y(dy)}l-9-14a10.5 10.5 0 1 1 18 0z" fill="#e0201b" stroke="#fff" stroke-width="2"/><circle cx="${X(dx)}" cy="${Y(dy) - 19}" r="3.5" fill="#fff"/>`;
       if (zoom <= 2) t += label(X(dx), Y(dy) - 42, dname, "plain");
     }
-    if (zoom >= 2) t += label(X(Math.min(300, 150 / z)), Y(-68), "Lê Lợi", "route");
+    if (navOn && zoom >= 2) t += label(X(Math.min(300, 150 / z)), Y(-68), "Lê Lợi", "route");
     if (zoom <= 1) W.districts.forEach(([x, y, n]) => (t += label(X(x), Y(y), n, "district")));
     if (zoom >= 3) W.majors.forEach(([x1, y1, x2, y2, n]) => {
-      if (n === "Lê Lợi") return;
+      if (navOn && n === "Lê Lợi") return;
       for (const f of [0.47, 0.53, 0.42, 0.58]) { const l = label(X(x1 + (x2 - x1) * f), Y(y1 + (y2 - y1) * f), n, "plain"); if (l) { t += l; break; } }
     });
     if (zoom >= 4) W.pois.forEach(([x, y, k]) => {
@@ -651,10 +776,69 @@
   }
   function mapBar() {
     const now = performance.now();
+    if (menu) return "▲▼ chọn · Enter xác nhận · Home thoát";
+    if (now < noteUntil) return noteText;
     if (mapMode && now < hintUntil) return "+/- thu phóng · Home để thoát";
     if (mapMode && now < zoomHintUntil) return `Thu phóng · ${SCALE[zoom]}`;
+    if (!mapMode && !$("navon").checked) return "Chia sẻ vị trí từ Google Maps";   // màn bìa, chưa chỉ đường: nhắc cách bắt đầu
     return "Nguyễn Huệ";
   }
+  // ===== Menu bản đồ: giữ Enter khi bản đồ đang mở. App TỰ VẼ menu này vào ảnh (không dùng menu gốc của đồng hồ).
+  // ▲▼ chọn, Enter xác nhận, Home thoát/quay lại, tự đóng sau 8 s. "Dừng chỉ đường" chỉ có khi đang chỉ đường.
+  const places = { home: { name: "Nhà", sub: "Quận 7" }, work: { name: "Công ty", sub: "Bitexco, Q.1" }, favs: [{ name: "Cà phê Bờ Hồ", sub: "Q.1" }, { name: "Sân vận động Thống Nhất", sub: "Q.10" }] };
+  let menu = null, menuTimer = null, destName = "Chợ Bến Thành", noteText = "", noteUntil = 0;
+  const MI = {
+    stop: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>',
+    home: '<svg viewBox="0 0 24 24"><path d="M4 11.5L12 4l8 7.5M6.5 10v9h11v-9"/></svg>',
+    work: '<svg viewBox="0 0 24 24"><rect x="3.5" y="8" width="17" height="11" rx="2.5"/><path d="M9 8V6.2A1.7 1.7 0 0 1 10.7 4.5h2.6A1.7 1.7 0 0 1 15 6.2V8M3.5 13h17"/></svg>',
+    star: '<svg viewBox="0 0 24 24"><path d="M12 4l2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.6-4.8 2.6 1-5.4-4-3.8 5.4-.7z"/></svg>',
+    back: '<svg viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></svg>',
+  };
+  const note = (t, ms = 2500) => { noteText = t; noteUntil = performance.now() + ms; render(); setTimeout(render, ms + 60); };
+  function setNav(on) {
+    const c = $("navon");
+    c.checked = on;
+    c.dispatchEvent(new Event("input", { bubbles: true }));
+    if (window.parent !== window) parent.postMessage({ yalinkNav: true, on }, "*");   // báo cho app điện thoại
+  }
+  function menuItems() {
+    if (menu.level === "fav") {
+      const list = places.favs.length ? places.favs.map((f, i) => ({ k: "fav", i, label: f.name, sub: f.sub, ic: "star" })) : [{ k: "none", label: "Chưa có yêu thích", ic: "star", off: true }];
+      return [{ k: "back", label: "Quay lại", ic: "back" }, ...list];
+    }
+    const nav = $("navon").checked;
+    return [
+      ...(nav ? [{ k: "stop", label: "Dừng chỉ đường", ic: "stop", danger: true }] : []),
+      { k: "home", label: "Về nhà", sub: places.home ? places.home.sub : "Chưa đặt", ic: "home", off: !places.home },
+      { k: "work", label: "Đến công ty", sub: places.work ? places.work.sub : "Chưa đặt", ic: "work", off: !places.work },
+      { k: "favs", label: "Yêu thích", sub: places.favs.length ? places.favs.length + " nơi" : "Chưa có", ic: "star", chev: true },
+    ];
+  }
+  function drawMenu() {
+    document.querySelector(".mapview").classList.toggle("menuopen", !!menu);
+    if (!menu) { $("mapmenu").innerHTML = ""; return; }
+    const items = menuItems(), VIS = 4;
+    menu.i = Math.max(0, Math.min(items.length - 1, menu.i));
+    const start = Math.max(0, Math.min(items.length - VIS, menu.i - 1));
+    $("mapmenu").innerHTML = items.slice(start, start + VIS).map((it, k) =>
+      `<div class="mi ${start + k === menu.i ? "sel" : ""} ${it.off ? "off" : ""} ${it.danger ? "danger" : ""}"><span class="mic">${MI[it.ic]}</span><b>${it.label}</b>${it.sub ? `<small>${it.sub}</small>` : ""}${it.chev ? "<em>›</em>" : ""}</div>`).join("");
+  }
+  const armMenu = () => { clearTimeout(menuTimer); menuTimer = setTimeout(closeMenu, 8000); };
+  function openMenu() { if (menu) return; menu = { level: "main", i: 0 }; armMenu(); drawMenu(); render(); }
+  function closeMenu() { menu = null; clearTimeout(menuTimer); drawMenu(); render(); }
+  function menuMove(dir) { const n = menuItems().length; menu.i = (menu.i + (dir < 0 ? -1 : 1) + n) % n; armMenu(); drawMenu(); }
+  function menuBack() { if (menu.level === "fav") { menu = { level: "main", i: 0 }; armMenu(); drawMenu(); } else closeMenu(); }
+  function goTo(p) { destName = p.name; setNav(true); closeMenu(); note("Đi tới " + p.name); }
+  function menuSelect() {
+    const it = menuItems()[menu.i];
+    if (it.k === "stop") { setNav(false); closeMenu(); note("Đã dừng chỉ đường"); }
+    else if (it.k === "home") { if (places.home) goTo(places.home); else { closeMenu(); note("Chưa đặt nhà"); } }
+    else if (it.k === "work") { if (places.work) goTo(places.work); else { closeMenu(); note("Chưa đặt công ty"); } }
+    else if (it.k === "favs") { menu = { level: "fav", i: places.favs.length ? 1 : 0 }; armMenu(); drawMenu(); }
+    else if (it.k === "fav") goTo(places.favs[it.i]);
+    else if (it.k === "back") menuBack();
+  }
+
   function enterMap() {
     mapMode = true;
     document.querySelector(".map").classList.add("open");
@@ -666,17 +850,20 @@
   }
   function exitMap() {
     mapMode = false;
+    menu = null; drawMenu();
     document.querySelector(".map").classList.remove("open");
     slideMenu(false);
     render();
   }
   function enterTap() {
+    if (menu) return menuSelect();
     if (page() === "map") return mapMode ? setZoom(ZDEF) : enterMap();
     if (page() === "home") return nextSlide();
     togglePlay();
   }
   // Home: đang mở bản đồ → về màn bìa Bản đồ; đang ở trang khác → bánh xe xoay về trang Home
   function homePress() {
+    if (menu) return menuBack();
     if (mapMode) return exitMap();
     if (volMode) closeVol();
     const i = order.indexOf(page());
@@ -684,6 +871,7 @@
   }
 
   function press(dir) {
+    if (menu) return menuMove(dir);
     if (volMode) return stepVol(dir < 0 ? 10 : -10);   // đang chỉnh âm lượng: ＋/－ tác dụng ngay
     if (mapMode) return setZoom(zoom + (dir < 0 ? 1 : -1)); // chế độ bản đồ: ＋ phóng to, － thu nhỏ
     if (page() !== "music" && !pending) return go(dir);
@@ -697,7 +885,7 @@
   }
 
   // Ảnh nền: bộ ảnh, mờ chéo sang ảnh kế mỗi N giây
-  let photos = ["bg-sample.svg", "photo-sea.svg", "photo-city.svg"], slide = 0, slideTimer = null;
+  let photos = ["photo-sea.svg", "photo-meadow.svg"], slide = 0, slideTimer = null;
   function buildSlides() {
     $("bgs").innerHTML = photos.map((src) => `<img class="bg" src="${src}" alt="">`).join("");
     slide = 0;
@@ -724,6 +912,25 @@
   });
   $("every").addEventListener("change", buildSlides);
   buildSlides();
+
+  $("greeton").addEventListener("change", (e) => { welcomeOn = e.target.checked; });
+  $("greetname").addEventListener("input", (e) => { userName = e.target.value; fillWelcome(); });
+  fillWelcome();
+
+  // Nhúng vào mockup app iPhone (design/phone/app.html): ?embed=1 ẩn bảng chỉnh, nhận lệnh bằng postMessage
+  if (new URLSearchParams(location.search).get("embed") === "1") document.querySelector(".ctl").style.display = "none";
+  window.addEventListener("message", (e) => {
+    const d = e.data;
+    if (!d || !d.yalink) return;
+    const click = { up: "up", down: "down", enter: "mid", hold: "midhold", home: "homebtn", welcome: "intro" }[d.btn];
+    if (click) $(click).click();
+    if (d.barKey) { barText[d.barKey] = d.barText; $("bar").value = d.barKey; $("bar").dispatchEvent(new Event("input", { bubbles: true })); }
+    if (d.places) { places.home = d.places.home; places.work = d.places.work; places.favs = d.places.favs; if (menu) drawMenu(); }
+    if (d.name !== undefined) { userName = d.name; fillWelcome(); }
+    if (d.greeting !== undefined) welcomeOn = !!d.greeting;
+    if (d.nav !== undefined) { $("navon").checked = !!d.nav; $("navon").dispatchEvent(new Event("input", { bubbles: true })); }
+    if (d.vehicle) { $("c").value = d.vehicle.coolant; $("v").value = d.vehicle.battery; $("c").dispatchEvent(new Event("input", { bubbles: true })); }
+  });
 
   $("intro").addEventListener("click", playIntro);
   $("up").addEventListener("click", () => press(-1));

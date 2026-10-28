@@ -42,12 +42,24 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           for p in location-always photos media-library; do xcrun simctl privacy "$UDID" grant $p com.trongpm.yalink || true; done
           mkdir shots
-          for s in dash nav vehicle trip routing photo test log; do
-            SIMCTL_CHILD_YALINK_SECTION=$s SIMCTL_CHILD_YALINK_NAV=1 xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
+          # Lần mở đầu tiên: màn "Chào bạn!" (chưa có tên)
+          xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
+          sleep 6
+          xcrun simctl io "$UDID" screenshot "shots/onboarding.png"
+          # 4 tab: dash = Đồng hồ, nav = Dẫn đường, car = Xe (dữ liệu mẫu), set = Cài đặt
+          for s in dash nav car set; do
+            SIMCTL_CHILD_YALINK_SKIP_ONBOARD=1 SIMCTL_CHILD_YALINK_SEED=1 SIMCTL_CHILD_YALINK_TAB=$s SIMCTL_CHILD_YALINK_NAV=1 \
+              xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
             sleep 6
             xcrun simctl io "$UDID" screenshot "shots/$s.png"
           done
-          SIMCTL_CHILD_YALINK_CONFIRM=1 SIMCTL_CHILD_YALINK_NAV=1 xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
+          # Cài đặt ở chế độ nhà phát triển, và bảng xác nhận điểm đến
+          SIMCTL_CHILD_YALINK_SKIP_ONBOARD=1 SIMCTL_CHILD_YALINK_DEV=1 SIMCTL_CHILD_YALINK_TAB=set \
+            xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
+          sleep 6
+          xcrun simctl io "$UDID" screenshot "shots/set-dev.png"
+          SIMCTL_CHILD_YALINK_SKIP_ONBOARD=1 SIMCTL_CHILD_YALINK_CONFIRM=1 SIMCTL_CHILD_YALINK_TAB=nav \
+            xcrun simctl launch --terminate-running-process "$UDID" com.trongpm.yalink
           sleep 6
           xcrun simctl io "$UDID" screenshot "shots/confirm.png"
       - uses: actions/upload-artifact@v4

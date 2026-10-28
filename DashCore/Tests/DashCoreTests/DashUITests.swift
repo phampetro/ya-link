@@ -99,9 +99,18 @@ final class DashUITests: XCTestCase {
         XCTAssertEqual(ui.bottomBarText(now: 6.5), "Thu phóng · 250 m")
     }
 
-    func testMusicBarIsSafetyText() {
+    func testMapCoverWithoutNavigationAsksToShare() {
+        let ui = DashUI()
+        _ = ui.press(.down, now: 0)
+        XCTAssertEqual(ui.page, .map)
+        XCTAssertEqual(ui.bottomBarText(now: 1), "Chia sẻ vị trí từ Google Maps")
+        ui.nav = nav(distance: 800)
+        XCTAssertEqual(ui.bottomBarText(now: 1), "Nguyễn Huệ", "có chuyến đi: hiện tên đường đang chạy")
+    }
+
+    func testMusicBarHintsVolume() {
         let ui = musicPage()
-        XCTAssertEqual(ui.bottomBarText(now: 10), "LƯU Ý LÁI XE AN TOÀN")
+        XCTAssertEqual(ui.bottomBarText(now: 10), "Giữ Enter để tăng/giảm âm lượng")
     }
 
     func testStartNavigationOpensMap() {
@@ -141,6 +150,205 @@ final class DashUITests: XCTestCase {
         XCTAssertEqual(DashUI.batteryLevel(12.8), .normal)
         XCTAssertEqual(DashUI.batteryLevel(12.0), .warn)
         XCTAssertEqual(DashUI.batteryLevel(11.5), .bad)
+    }
+
+    // MARK: - Menu bản đồ
+
+    func testHoldEnterOpensMapMenuOnlyWhenMapOpen() {
+        let ui = mapPage(open: false)
+        _ = ui.press(.enterHold, now: 1)
+        XCTAssertNil(ui.menu, "màn bìa: giữ Enter không mở menu")
+        _ = ui.press(.enter, now: 2)
+        XCTAssertTrue(ui.mapOpen)
+        XCTAssertEqual(ui.press(.enterHold, now: 3), [])
+        XCTAssertEqual(ui.menu, MapMenu(level: .main, index: 0))
+        XCTAssertEqual(ui.bottomBarText(now: 3.5), "▲▼ chọn · Enter xác nhận · Home thoát")
+    }
+
+    func testHoldEnterOnMusicStillOpensVolume() {
+        let ui = musicPage()
+        _ = ui.press(.enterHold, now: 5)
+        XCTAssertTrue(ui.volumeMode)
+        XCTAssertNil(ui.menu)
+    }
+
+    func testMenuItemsDependOnNavigation() {
+        let ui = mapPage(open: true)
+        ui.places = places()
+        _ = ui.press(.enterHold, now: 3)
+        XCTAssertEqual(ui.menuItems().map { $0.kind }, [.home, .work, .favorites])
+        _ = ui.press(.home, now: 4)
+        XCTAssertNil(ui.menu)
+        ui.nav = nav(distance: 800)
+        _ = ui.press(.enterHold, now: 5)
+        XCTAssertEqual(ui.menuItems().map { $0.kind }, [.stop, .home, .work, .favorites])
+        XCTAssertTrue(ui.menuItems()[0].danger)
+        XCTAssertEqual(ui.menuItems()[3].sub, "2 nơi")
+        XCTAssertTrue(ui.menuItems()[3].chevron)
+    }
+
+    func testMenuSelectionIsCyclic() {
+        let ui = mapPage(open: true)
+        _ = ui.press(.enterHold, now: 3)                       // không chỉ đường: 3 dòng
+        _ = ui.press(.up, now: 3.1)
+        XCTAssertEqual(ui.menu?.index, 2, "UP ở dòng đầu: xuống dòng cuối")
+        _ = ui.press(.down, now: 3.2)
+        XCTAssertEqual(ui.menu?.index, 0, "DOWN ở dòng cuối: về dòng đầu")
+        XCTAssertEqual(ui.zoom, DashUI.defaultZoom, "menu mở: UP/DOWN không thu phóng")
+    }
+
+    func testMenuStopNavigation() {
+        let ui = mapPage(open: true)
+        ui.nav = nav(distance: 800)
+        _ = ui.press(.enterHold, now: 3)
+        XCTAssertEqual(ui.press(.enter, now: 4), [.stopNavigation])
+        XCTAssertNil(ui.menu)
+        XCTAssertNil(ui.nav)
+        XCTAssertTrue(ui.mapOpen, "bản đồ vẫn mở")
+        XCTAssertEqual(ui.bottomBarText(now: 5), "Đã dừng chỉ đường")
+        XCTAssertNotEqual(ui.bottomBarText(now: 6.6), "Đã dừng chỉ đường", "ghi chú hết sau 2,5 s")
+    }
+
+    func testMenuNavigateHomeWorkAndFavourite() {
+        let ui = mapPage(open: true)
+        ui.places = places()
+        _ = ui.press(.enterHold, now: 3)
+        XCTAssertEqual(ui.press(.enter, now: 4), [.navigate(places().home!)], "dòng đầu = Về nhà")
+        XCTAssertNil(ui.menu)
+        XCTAssertEqual(ui.bottomBarText(now: 4.5), "Đi tới Nhà")
+
+        _ = ui.press(.enterHold, now: 10)
+        _ = ui.press(.down, now: 10.1)
+        XCTAssertEqual(ui.press(.enter, now: 10.2), [.navigate(places().work!)])
+        XCTAssertEqual(ui.bottomBarText(now: 10.5), "Đi tới Công ty")
+
+        _ = ui.press(.enterHold, now: 20)
+        _ = ui.press(.up, now: 20.1)                           // xoay vòng tới "Yêu thích"
+        XCTAssertEqual(ui.press(.enter, now: 20.2), [])
+        XCTAssertEqual(ui.menu?.level, .favorites)
+        XCTAssertEqual(ui.menu?.index, 1, "vào danh sách yêu thích: chọn sẵn nơi đầu tiên")
+        XCTAssertEqual(ui.menuItems().map { $0.label }, ["Quay lại", "Cà phê Bờ Hồ", "Sân vận động Thống Nhất"])
+        _ = ui.press(.down, now: 20.3)
+        XCTAssertEqual(ui.press(.enter, now: 20.4), [.navigate(places().favs[1])])
+        XCTAssertNil(ui.menu)
+        XCTAssertEqual(ui.bottomBarText(now: 20.5), "Đi tới Sân vận động Thống Nhất")
+    }
+
+    func testMenuMissingHomeOrWorkShowsNote() {
+        let ui = mapPage(open: true)                           // chưa đặt nơi nào
+        _ = ui.press(.enterHold, now: 3)
+        XCTAssertEqual(ui.press(.enter, now: 4), [])
+        XCTAssertNil(ui.menu)
+        XCTAssertEqual(ui.bottomBarText(now: 4.5), "Chưa đặt nhà")
+        _ = ui.press(.enterHold, now: 10)
+        _ = ui.press(.down, now: 10.1)
+        XCTAssertEqual(ui.press(.enter, now: 10.2), [])
+        XCTAssertEqual(ui.bottomBarText(now: 10.5), "Chưa đặt công ty")
+        XCTAssertNotEqual(ui.bottomBarText(now: 12.8), "Chưa đặt công ty")
+    }
+
+    func testMenuHomeGoesBackOneLevelThenClosesAndMapStaysOpen() {
+        let ui = mapPage(open: true)
+        ui.places = places()
+        _ = ui.press(.enterHold, now: 3)
+        _ = ui.press(.up, now: 3.1)
+        _ = ui.press(.enter, now: 3.2)
+        XCTAssertEqual(ui.menu?.level, .favorites)
+        _ = ui.press(.home, now: 4)
+        XCTAssertEqual(ui.menu, MapMenu(level: .main, index: 0), "Home: về menu chính")
+        _ = ui.press(.home, now: 5)
+        XCTAssertNil(ui.menu, "Home lần 2: đóng menu")
+        XCTAssertTrue(ui.mapOpen)
+        XCTAssertEqual(ui.page, .map)
+        // "Quay lại" trong danh sách yêu thích cũng về menu chính
+        _ = ui.press(.enterHold, now: 6)
+        _ = ui.press(.up, now: 6.1)
+        _ = ui.press(.enter, now: 6.2)
+        _ = ui.press(.up, now: 6.3)                            // dòng "Quay lại"
+        XCTAssertEqual(ui.press(.enter, now: 6.4), [])
+        XCTAssertEqual(ui.menu?.level, .main)
+    }
+
+    func testMenuAutoClosesAfterEightSecondsOfNoInput() {
+        let ui = mapPage(open: true)
+        _ = ui.press(.enterHold, now: 10)
+        _ = ui.tick(now: 17.9)
+        XCTAssertNotNil(ui.menu)
+        _ = ui.press(.down, now: 17.9)                         // bấm lại: đếm lại 8 s
+        _ = ui.tick(now: 25)
+        XCTAssertNotNil(ui.menu)
+        _ = ui.tick(now: 26)
+        XCTAssertNil(ui.menu)
+        XCTAssertTrue(ui.mapOpen)
+    }
+
+    func testFavouritesEmptyListHasNoSelectableFavourite() {
+        let ui = mapPage(open: true)
+        ui.places = SavedPlaces(home: places().home, work: nil, favs: [])
+        _ = ui.press(.enterHold, now: 3)
+        _ = ui.press(.up, now: 3.1)
+        _ = ui.press(.enter, now: 3.2)
+        XCTAssertEqual(ui.menu?.index, 0)
+        XCTAssertEqual(ui.menuItems().map { $0.kind }, [.back, .empty])
+        XCTAssertTrue(ui.menuItems()[1].off)
+        _ = ui.press(.down, now: 3.3)
+        XCTAssertEqual(ui.press(.enter, now: 3.4), [])
+        XCTAssertEqual(ui.menu?.level, .favorites, "dòng 'Chưa có yêu thích' không làm gì")
+    }
+
+    func testMenuHiddenByArrival() {
+        let ui = mapPage(open: true)
+        ui.nav = nav(distance: 20)
+        _ = ui.press(.enterHold, now: 3)
+        ui.arrive(now: 4)
+        XCTAssertNil(ui.menu)
+    }
+
+    // MARK: - Màn chào
+
+    func testGreetingDisabledSkipsWelcome() {
+        let ui = DashUI()
+        ui.greetingEnabled = false
+        ui.homeBarText = "ODO 3.214 km"
+        ui.showWelcome(now: 5)
+        XCTAssertFalse(ui.inWelcome(5))
+        XCTAssertEqual(ui.page, .home)
+        XCTAssertEqual(ui.bottomBarText(now: 5), "ODO 3.214 km")
+        XCTAssertEqual(ui.press(.enter, now: 5.1), [.nextPhoto], "nút dùng được ngay")
+        XCTAssertEqual(ui.sinceWelcomeEnd(5), 0, "hiệu ứng trượt vào chạy từ đầu")
+    }
+
+    func testWelcomeFromMapGoesHome() {
+        let ui = mapPage(open: true)
+        ui.showWelcome(now: 10)
+        XCTAssertEqual(ui.page, .home)
+        XCTAssertFalse(ui.mapOpen)
+        XCTAssertNil(ui.menu)
+        XCTAssertTrue(ui.inWelcome(11))
+        XCTAssertFalse(ui.inWelcome(12.1))
+    }
+
+    func testSavedPlacesCodableRoundTrip() throws {
+        let value = places()
+        let data = try JSONEncoder().encode(value)
+        XCTAssertEqual(try JSONDecoder().decode(SavedPlaces.self, from: data), value)
+        XCTAssertEqual(value.home?.id, "NhàQuận 7")
+        XCTAssertEqual(SavedPlaces(), SavedPlaces(home: nil, work: nil, favs: []))
+    }
+
+    private func mapPage(open: Bool) -> DashUI {
+        let ui = DashUI()
+        _ = ui.press(.down, now: 0)
+        XCTAssertEqual(ui.page, .map)
+        if open { _ = ui.press(.enter, now: 1) }
+        return ui
+    }
+
+    private func places() -> SavedPlaces {
+        SavedPlaces(home: SavedPlace(name: "Nhà", sub: "Quận 7", lat: 10.73, lon: 106.72),
+                    work: SavedPlace(name: "Công ty", sub: "Bitexco, Q.1", lat: 10.77, lon: 106.70),
+                    favs: [SavedPlace(name: "Cà phê Bờ Hồ", sub: "Q.1", lat: 10.78, lon: 106.69),
+                           SavedPlace(name: "Sân vận động Thống Nhất", sub: "Q.10", lat: 10.76, lon: 106.66)])
     }
 
     private func musicPage() -> DashUI {

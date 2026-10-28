@@ -191,6 +191,100 @@ enum Icons {
         c.stroke(w, color, width: 2.4)
     }
 
+    // MARK: Menu bản đồ (hộp 24, nét)
+
+    static func menuIcon(_ c: Canvas, _ icon: MapMenu.Icon, _ color: CGColor) {
+        let p = CGMutablePath()
+        switch icon {
+        case .stop:
+            p.addRoundedRect(in: CGRect(x: 6, y: 6, width: 12, height: 12), cornerWidth: 2.5, cornerHeight: 2.5)
+        case .home:
+            p.move(to: CGPoint(x: 4, y: 11.5)); p.addLine(to: CGPoint(x: 12, y: 4)); p.addLine(to: CGPoint(x: 20, y: 11.5))
+            p.move(to: CGPoint(x: 6.5, y: 10)); p.addLine(to: CGPoint(x: 6.5, y: 19)); p.addLine(to: CGPoint(x: 17.5, y: 19))
+            p.addLine(to: CGPoint(x: 17.5, y: 10))
+        case .work:
+            p.addRoundedRect(in: CGRect(x: 3.5, y: 8, width: 17, height: 11), cornerWidth: 2.5, cornerHeight: 2.5)
+            p.move(to: CGPoint(x: 9, y: 8)); p.addLine(to: CGPoint(x: 9, y: 6.2))
+            p.addQuadCurve(to: CGPoint(x: 10.7, y: 4.5), control: CGPoint(x: 9, y: 4.5))
+            p.addLine(to: CGPoint(x: 13.3, y: 4.5))
+            p.addQuadCurve(to: CGPoint(x: 15, y: 6.2), control: CGPoint(x: 15, y: 4.5))
+            p.addLine(to: CGPoint(x: 15, y: 8))
+            p.move(to: CGPoint(x: 3.5, y: 13)); p.addLine(to: CGPoint(x: 20.5, y: 13))
+        case .star:
+            p.addLines(between: [CGPoint(x: 12, y: 4), CGPoint(x: 14.4, y: 9), CGPoint(x: 19.8, y: 9.7), CGPoint(x: 15.8, y: 13.5),
+                                 CGPoint(x: 16.8, y: 18.9), CGPoint(x: 12, y: 16.3), CGPoint(x: 7.2, y: 18.9),
+                                 CGPoint(x: 8.2, y: 13.5), CGPoint(x: 4.2, y: 9.7), CGPoint(x: 9.6, y: 9)])
+            p.closeSubpath()
+        case .back:
+            p.move(to: CGPoint(x: 14.5, y: 6)); p.addLine(to: CGPoint(x: 8.5, y: 12)); p.addLine(to: CGPoint(x: 14.5, y: 18))
+        }
+        c.stroke(p, color, width: 2.6)
+    }
+
+    // MARK: Logo đồng hồ tốc độ (viewBox 140 205 744 620; chép từ design/logo/app-icon.svg)
+
+    /// Cung tròn tâm `center`, bán kính `radius`, đi từ điểm `a` tới điểm `b` theo chiều kim đồng hồ trên màn hình.
+    /// Vẽ bằng nhiều đoạn thẳng ngắn (2°) để khỏi phụ thuộc quy ước chiều của `addArc`.
+    private static func arcPath(center: CGPoint, radius: CGFloat, from a: CGPoint, to b: CGPoint) -> CGPath {
+        let a0 = atan2(a.y - center.y, a.x - center.x)
+        var a1 = atan2(b.y - center.y, b.x - center.x)
+        while a1 <= a0 { a1 += 2 * .pi }
+        let steps = max(8, Int((a1 - a0) * 90 / .pi))
+        let p = CGMutablePath()
+        for i in 0...steps {
+            let t = a0 + (a1 - a0) * CGFloat(i) / CGFloat(steps)
+            let pt = CGPoint(x: center.x + radius * cos(t), y: center.y + radius * sin(t))
+            if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+        }
+        return p
+    }
+
+    /// Ba cung (hồng, xanh dương, xanh lá) + kim nổi không chạm tâm. Màu phẳng (không chuyển sắc) cho JPEG nhẹ.
+    static func logo(_ c: Canvas, in rect: CGRect) {
+        let s = min(rect.width / 744, rect.height / 620)
+        let w = 744 * s, h = 620 * s
+        c.ctx.saveGState()
+        c.ctx.translateBy(x: rect.minX + (rect.width - w) / 2, y: rect.minY + (rect.height - h) / 2)
+        c.ctx.scaleBy(x: s, y: s)
+        c.ctx.translateBy(x: -140, y: -205)
+
+        let o = CGPoint(x: 512, y: 600)
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x, y: y) }
+        let pink = RGB(255, 96, 132), blue = RGB(52, 158, 255), green = RGB(64, 214, 106)
+        c.stroke(arcPath(center: o, radius: 330, from: pt(226.2, 765), to: pt(282.8, 362.6)), pink.cg(), width: 92)
+        c.stroke(arcPath(center: o, radius: 330, from: pt(318, 333), to: pt(706, 333)), blue.cg(), width: 92)
+        c.stroke(arcPath(center: o, radius: 330, from: pt(741.2, 362.6), to: pt(797.8, 765)), green.cg(), width: 92)
+
+        // Viền sáng ngoài và trong mỗi cung
+        let rimOut = RGB.white.cg(0.6), rimIn = RGB.white.cg(0.18)
+        c.stroke(arcPath(center: o, radius: 345, from: pt(196.8, 740.3), to: pt(247.7, 378.2)), rimOut, width: 9)
+        c.stroke(arcPath(center: o, radius: 313, from: pt(217.9, 707.1), to: pt(258.8, 416.0)), rimIn, width: 5)
+        c.stroke(arcPath(center: o, radius: 345, from: pt(339.5, 301.2), to: pt(684.5, 301.2)), rimOut, width: 9)
+        c.stroke(arcPath(center: o, radius: 313, from: pt(374.8, 318.7), to: pt(649.2, 318.7)), rimIn, width: 5)
+        c.stroke(arcPath(center: o, radius: 345, from: pt(776.3, 378.2), to: pt(827.2, 740.3)), rimOut, width: 9)
+        c.stroke(arcPath(center: o, radius: 313, from: pt(765.2, 416.0), to: pt(806.1, 707.1)), rimIn, width: 5)
+
+        // Kim nổi (đỉnh 280, đáy 534) và vệt sáng
+        let needle = CGMutablePath()
+        needle.move(to: pt(512, 280))
+        needle.addLine(to: pt(564, 520))
+        needle.addQuadCurve(to: pt(551, 534), control: pt(565, 534))
+        needle.addLine(to: pt(473, 534))
+        needle.addQuadCurve(to: pt(460, 520), control: pt(459, 534))
+        needle.closeSubpath()
+        c.fill(needle, RGB.white.cg(0.82))
+        c.stroke(needle, RGB.white.cg(0.92), width: 8)
+        let shine = CGMutablePath()
+        shine.move(to: pt(512, 322)); shine.addLine(to: pt(481, 500))
+        c.stroke(shine, RGB.white.cg(0.7), width: 6)
+
+        // Tâm: vòng mờ + chấm trắng (cách xa chân kim)
+        c.fillCircle(center: pt(512, 700), radius: 50, RGB.white.cg(0.16))
+        c.strokeCircle(center: pt(512, 700), radius: 50, RGB.white.cg(0.9), width: 8)
+        c.fillCircle(center: pt(512, 700), radius: 15, RGB.white.cg())
+        c.ctx.restoreGState()
+    }
+
     // MARK: Bản đồ (hộp 48)
 
     static func foldedMap(_ c: Canvas, line: CGColor) {

@@ -97,8 +97,9 @@ public final class LinkASession {
             r.send = [PhoneCommand.rearmButtons]
             r.events = [.buttonDown]
 
-        case .speed(let v, _):
-            r.events = [.speed(v)]
+        case .speed(let v, let mph):
+            // Sự kiện luôn là km/h. mph chỉ là giả định trong tài liệu (byte 0 = 01).
+            r.events = [.speed(mph ? Int((Double(v) * 1.609344).rounded()) : v)]
 
         case .ack(let id):
             var rtt: Int?

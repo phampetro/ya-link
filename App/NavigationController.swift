@@ -6,6 +6,8 @@ import MapKit
 
 /// Luồng dẫn đường: nhận chữ chia sẻ từ Google Maps → tìm điểm đến → xác nhận → tính đường
 /// (Valhalla / Google) → bám tuyến theo GPS (tính lại khi đi lệch) → tới nơi.
+/// Cũng dùng cho luồng "lưu địa điểm" (cùng bước đọc link và xác nhận, nhưng chỉ lưu, không dẫn đường)
+/// và `navigate(to:)` đi thẳng tới địa điểm đã lưu (từ menu giữ Enter trên đồng hồ).
 @MainActor
 final class NavigationController: ObservableObject {
     struct Pending: Equatable {
@@ -24,10 +26,15 @@ final class NavigationController: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var routeSource = ""
+    /// Thông tin chặng tiếp theo (bản sao của `ui.nav` để màn hình quan sát được).
+    @Published private(set) var info: NavInfo?
+    /// Đang ở luồng "Đặt Nhà / Công ty / Yêu thích từ link": màn xác nhận ở chế độ lưu.
+    @Published private(set) var pendingSlot: PlaceSlot?
 
     let tiles = TileStore()
     var onStarted: ((NavInfo) -> Void)?
     var onChange: (() -> Void)?
+    var onToast: ((String) -> Void)?
 
     private let ui: DashUI
     private let settings: AppSettings
@@ -35,6 +42,8 @@ final class NavigationController: ObservableObject {
     private var navigator: Navigator?
     private var route: Route?
     private var destination: Pending?
+    private var lastPending: Pending?
+    private var lastText: String?
     private var lastFix: CLLocation?
     private var lastHeading: Double = 0
     private var replanning = false
@@ -54,10 +63,19 @@ final class NavigationController: ObservableObject {
         state = .confirm(Pending(name: "Chợ Bến Thành", point: GeoPoint(lat: 10.7725, lon: 106.6980)))
     }
 
+    private func restState() {
+        state = navigator != nil ? .active : .idle
+    }
+
+    private func publishInfo() {
+        if info != ui.nav { info = ui.nav }
+    }
+
     // MARK: - Chia sẻ
 
     /// Chữ nhận từ tiện ích Chia sẻ (hoặc từ bộ nhớ tạm).
     func handleShared(text: String) {
+        lastText = text
         state = .resolving
         Task {
             guard let dest = await ShareLink.resolve(text: text) else {
@@ -76,6 +94,12 @@ final class NavigationController: ObservableObject {
         }
     }
 
+    /// Luồng thêm địa điểm: dán link → đọc → màn xác nhận ở chế độ "Lưu địa điểm này?".
+    func beginAdd(slot: PlaceSlot, text: String) {
+        pendingSlot = slot
+        handleShared(text: text)
+    }
+
     /// Tìm tên địa điểm bằng MapKit (chỉ lấy kết quả đầu, người dùng xác nhận lại ở màn xác nhận).
     private func search(_ text: String) async -> GeoPoint? {
         let req = MKLocalSearch.Request()
@@ -88,14 +112,54 @@ final class NavigationController: ObservableObject {
     }
 
     func cancelPending() {
-        if case .active = state { return }
-        state = .idle
+        pendingSlot = nil
+        restState()
+    }
+
+    /// Lỗi: bỏ thông báo, về trạng thái trước đó.
+    func dismissFailure() {
+        pendingSlot = nil
+        restState()
+    }
+
+    /// Lưu địa điểm đang chờ xác nhận (không bắt đầu dẫn đường).
+    func savePending(as slot: PlaceSlot) {
+        guard case .confirm(let p) = state else { return }
+        let place = SavedPlace(name: p.name, sub: "", lat: p.point.lat, lon: p.point.lon)
+        settings.savePlace(place, as: slot)
+        pendingSlot = nil
+        restState()
+        onToast?(slot == .home ? "Đã lưu làm Nhà" : slot == .work ? "Đã lưu làm Công ty" : "Đã thêm vào Yêu thích")
+        fillSub(lat: p.point.lat, lon: p.point.lon)
+    }
+
+    /// Tra ngược toạ độ ra tên khu vực (vd. "Q.7") để hiện dưới tên địa điểm.
+    private func fillSub(lat: Double, lon: Double) {
+        let loc = CLLocation(latitude: lat, longitude: lon)
+        CLGeocoder().reverseGeocodeLocation(loc, preferredLocale: Locale(identifier: "vi_VN")) { [weak self] marks, _ in
+            let m = marks?.first
+            let sub = PlaceNames.short(sub: m?.subLocality ?? m?.subAdministrativeArea,
+                                       city: m?.locality ?? m?.administrativeArea)
+            Task { @MainActor in self?.settings.fillSub(sub, lat: lat, lon: lon) }
+        }
     }
 
     // MARK: - Bắt đầu / kết thúc
 
     func startConfirmed() {
         guard case .confirm(let p) = state else { return }
+        pendingSlot = nil
+        begin(p)
+    }
+
+    /// Đi thẳng tới địa điểm đã lưu, bỏ qua bước xác nhận (từ menu trên đồng hồ).
+    func navigate(to place: SavedPlace) {
+        pendingSlot = nil
+        begin(Pending(name: place.name, point: GeoPoint(lat: place.lat, lon: place.lon)))
+    }
+
+    private func begin(_ p: Pending) {
+        lastPending = p
         guard let loc = lastFix else {
             state = .failed("Chưa có vị trí GPS. Cho phép vị trí “Luôn luôn” rồi thử lại.")
             return
@@ -105,12 +169,24 @@ final class NavigationController: ObservableObject {
         Task { await plan(from: loc, to: p, initial: true) }
     }
 
+    /// Thử lại sau lỗi: tính đường lại tới điểm cuối, hoặc đọc lại link vừa dán.
+    func retry() {
+        if let p = lastPending {
+            begin(p)
+        } else if let t = lastText {
+            handleShared(text: t)
+        } else {
+            state = .idle
+        }
+    }
+
     func stop() {
         navigator = nil
         route = nil
         destination = nil
         ui.cancelNavigation()
         state = .idle
+        publishInfo()
         onChange?()
     }
 
@@ -134,11 +210,15 @@ final class NavigationController: ObservableObject {
                 } else {
                     ui.nav = info
                 }
+            } else if initial {
+                navigator = nil
+                state = .failed("Không tính được đường: tuyến rỗng.")
             }
         } catch {
             if initial { state = .failed("Không tính được đường: \(error.localizedDescription)") }
         }
         replanning = false
+        publishInfo()
         onChange?()
     }
 
@@ -154,8 +234,11 @@ final class NavigationController: ObservableObject {
         if u.arrived {
             navigator = nil
             route = nil
+            destination = nil
             ui.arrive(now: clock())
             state = .idle
+            publishInfo()
+            onToast?("Đã tới nơi")
             onChange?()
             return
         }
@@ -163,6 +246,7 @@ final class NavigationController: ObservableObject {
             if info.speedLimit == nil { info.speedLimit = ui.nav?.speedLimit }
             ui.nav = info
         }
+        publishInfo()
         if u.needsReroute && !replanning {
             replanning = true
             Task { await plan(from: loc, to: dest, initial: false) }

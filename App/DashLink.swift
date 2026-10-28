@@ -13,6 +13,9 @@ import UIKit
 final class DashLink: NSObject, ObservableObject {
     static let protocolA = "com.garmin.navilite.data"
 
+    /// Trạng thái kết nối với đồng hồ (hiện ở đầu tab Đồng hồ).
+    enum Phase: Equatable { case none, handshake, ready, showing }
+
     struct LogLine: Identifiable {
         let id = UUID()
         let ms: Int
@@ -30,7 +33,8 @@ final class DashLink: NSObject, ObservableObject {
     @Published private(set) var preview: UIImage?
     /// Chữ thanh dưới hiện tại (để màn xem trước vẽ giống đồng hồ).
     @Published private(set) var barText = ""
-    @Published var simulateNav = false { didSet { applySimulatedNav() } }
+    @Published private(set) var phase: Phase = .none
+    @Published private(set) var accessoryName = "NMAX Tech MAX"
 
     let ui = DashUI()
     let photos = PhotoStore()
@@ -38,10 +42,13 @@ final class DashLink: NSObject, ObservableObject {
     let settings = AppSettings()
     let location = LocationService()
     let ccu = CCULink()
+    let history = HistoryStore()
+    let toaster = Toaster()
     private(set) var navigation: NavigationController!
     private var lastWeatherAt: Date = .distantPast
     private var lastWeatherPlace = ""
     private var lastOdoKm: Double?
+    private var lastFuelL: Double?
     private let renderer = DashRenderer()
     private let session = LinkASession()
     private var ea: EASession?
@@ -63,9 +70,24 @@ final class DashLink: NSObject, ObservableObject {
         let t0 = started
         navigation = NavigationController(ui: ui, settings: settings, clock: { Date().timeIntervalSince(t0) })
         navigation.onChange = { [weak self] in self?.dirty = true }
+        navigation.onToast = { [weak self] text in self?.toaster.show(text) }
+        settings.onProfileChange = { [weak self] in self?.pushProfile() }
     }
 
+    /// Tên, lời chào và địa điểm đã lưu → giao diện đồng hồ (màn chào, menu giữ Enter).
+    private func pushProfile() {
+        ui.userName = settings.userName
+        ui.greetingEnabled = settings.greetingEnabled
+        ui.places = settings.places
+        dirty = true
+    }
+
+    private var didStart = false
+
     func start() {
+        guard !didStart else { return }
+        didStart = true
+        pushProfile()
         ui.homeBarText = settings.odometer.barText(odoKm: nil)
         photos.load()
         music.requestAccess()
@@ -75,8 +97,9 @@ final class DashLink: NSObject, ObservableObject {
         ccu.start()
         // Chỉ để chụp ảnh giao diện trên trình giả lập (CI)
         let env = ProcessInfo.processInfo.environment
-        if env["YALINK_NAV"] == "1" { simulateNav = true }
+        if env["YALINK_NAV"] == "1" { debugShowFakeTurn() }
         if env["YALINK_CONFIRM"] == "1" { navigation.debugShowConfirm() }
+        if env["YALINK_SEED"] == "1" { history.seedDemo() }
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidConnect, object: nil)
         nc.addObserver(self, selector: #selector(accessoryChanged), name: .EAAccessoryDidDisconnect, object: nil)
@@ -96,14 +119,23 @@ final class DashLink: NSObject, ObservableObject {
         dirty = true
     }
 
+    /// Xem thử màn chào trên màn hình xem trước (và đồng hồ nếu đang hiện); phát cả khi lời chào đang tắt.
     func replayWelcome() {
+        ui.greetingEnabled = true
+        ui.userName = settings.userName
         ui.showWelcome(now: now)
         dirty = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 4_200_000_000)
+            self?.pushProfile()
+        }
     }
 
     private func perform(_ actions: [DashUI.Action]) {
         for a in actions {
             switch a {
+            case .stopNavigation: navigation.stop()
+            case .navigate(let p): navigation.navigate(to: p)
             case .nextTrack: music.next()
             case .previousTrack: music.previous()
             case .togglePlay: music.togglePlay()
@@ -142,6 +174,10 @@ final class DashLink: NSObject, ObservableObject {
         if ui.vehicle.coolantC != coolant || ui.vehicle.batteryV != battery {
             ui.vehicle = VehicleInfo(coolantC: coolant, batteryV: battery)
             dirty = true
+        }
+        if d.odoKm != lastOdoKm || d.fuelUsedL != lastFuelL {
+            lastFuelL = d.fuelUsedL
+            history.record(odoKm: d.odoKm, fuelUsedL: d.fuelUsedL)
         }
         if d.odoKm != lastOdoKm {
             lastOdoKm = d.odoKm
@@ -186,11 +222,10 @@ final class DashLink: NSObject, ObservableObject {
         navigation.handleShared(text: s)
     }
 
-    private func applySimulatedNav() {
-        ui.nav = simulateNav
-            ? NavInfo(maneuver: .right, distanceToTurnM: 450, nextStreet: "Lê Lợi", currentStreet: "Nguyễn Huệ",
-                      destination: "Chợ Bến Thành", remainingKm: 7, eta: Date().addingTimeInterval(16 * 60), speedLimit: 60)
-            : nil
+    /// Chỉ để chụp ảnh giao diện trên CI (YALINK_NAV=1): giả một chặng rẽ trên màn xem trước.
+    private func debugShowFakeTurn() {
+        ui.nav = NavInfo(maneuver: .right, distanceToTurnM: 450, nextStreet: "Lê Lợi", currentStreet: "Nguyễn Huệ",
+                         destination: "Chợ Bến Thành", remainingKm: 7, eta: Date().addingTimeInterval(16 * 60), speedLimit: 60)
         dirty = true
     }
 
@@ -211,6 +246,7 @@ final class DashLink: NSObject, ObservableObject {
         let accessories = EAAccessoryManager.shared().connectedAccessories
         guard let acc = accessories.first(where: { $0.protocolStrings.contains(Self.protocolA) }) else { return }
         add("thấy: \(acc.name) · \(acc.manufacturer) · \(acc.protocolStrings.joined(separator: ", "))")
+        accessoryName = acc.name.isEmpty ? "NMAX Tech MAX" : acc.name
         guard let s = EASession(accessory: acc, forProtocol: Self.protocolA) else {
             status = "Không mở được kết nối. App khác đang giữ? Tắt Y-Connect rồi tắt/mở khoá điện."
             return
@@ -225,6 +261,7 @@ final class DashLink: NSObject, ObservableObject {
             stream.open()
         }
         status = "Đã nối \(acc.name), đang bắt tay…"
+        phase = .handshake
     }
 
     private func close(_ why: String) {
@@ -234,6 +271,7 @@ final class DashLink: NSObject, ObservableObject {
         }
         ea = nil
         status = why
+        phase = .none
     }
 
     // MARK: - Nhận
@@ -262,8 +300,10 @@ final class DashLink: NSObject, ObservableObject {
                 partNumber = "\(part) · \(w)×\(h)"
                 status = "Sẵn sàng. Bấm HOME trên tay lái để hiện màn hình app."
                 add("xác thực xong: \(part) \(w)×\(h)")
+                phase = .ready
             case .showFrames:
                 status = "Đồng hồ đang hiện màn hình app"
+                phase = .showing
                 if wasShowing {
                     press(.home, source: "xe (55 lần nữa = Home?)")
                 } else {
@@ -272,6 +312,7 @@ final class DashLink: NSObject, ObservableObject {
                 dirty = true
             case .pause:
                 status = "Đồng hồ tạm dừng (rời màn hình app / tắt máy)"
+                phase = .ready
             case .buttonUp, .buttonDown:
                 buttonCount += 1
                 let name = e == .buttonUp ? "UP" : "DOWN"

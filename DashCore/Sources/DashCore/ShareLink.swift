@@ -61,12 +61,22 @@ public enum ShareLink {
     public static func resolve(text: String) async -> SharedDestination? {
         guard var url = firstURL(in: text) else { return nil }
         var hops = 0
-        while isShortLink(url) {
-            guard hops < 5, let next = await location(of: url) else { return nil }
+        while isShortLink(url) || consentTarget(url) != nil {
+            guard hops < 5 else { return nil }
+            if let inner = consentTarget(url) { url = inner; hops += 1; continue }
+            guard let next = await location(of: url) else { return nil }
             url = next
             hops += 1
         }
         return parse(url: url, sharedText: text)
+    }
+
+    /// Trang đồng ý cookie của Google (consent.google.com/...?continue=<link bản đồ>): lấy link đích trong `continue`.
+    static func consentTarget(_ url: URL) -> URL? {
+        guard (url.host ?? "").lowercased().hasPrefix("consent."),
+              let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let v = c.queryItems?.first(where: { $0.name == "continue" })?.value else { return nil }
+        return URL(string: v)
     }
 
     // MARK: - Phân tích
@@ -88,7 +98,9 @@ public enum ShareLink {
         // 1. Chỉ đường: /maps/dir/<đi>/<dừng>.../<đến>/@.../data=...
         if let i = segs.firstIndex(of: "dir") {
             let rest = segs[(i + 1)...].prefix { !$0.hasPrefix("@") && !$0.hasPrefix("data=") }
-            let names = rest.map(decode)
+            // Bỏ phần rỗng ở cuối (".../dir/A/B/" hoặc ".../dir/?api=1&destination=...").
+            var names = rest.map(decode)
+            while let l = names.last, l.isEmpty { names.removeLast() }
             let data = segs.first { $0.hasPrefix("data=") } ?? ""
             let blocks = waypointBlocks(decode(data))
             var points: [GeoPoint?] = []
@@ -116,6 +128,18 @@ public enum ShareLink {
             let n = decode(segs[i + 1])
             if !n.isEmpty { placeName = n }
         }
+        // /maps/search/<chữ hoặc toạ độ>/ : chữ này là thứ cần tìm (khung nhìn @ chỉ là vùng đang xem).
+        var searchSeg: String?
+        if let i = segs.firstIndex(of: "search"), i + 1 < segs.count {
+            let n = decode(segs[i + 1])
+            if !n.isEmpty, !n.hasPrefix("@"), !n.hasPrefix("data=") { searchSeg = n }
+        }
+        // /maps/place/<lat,lng>/ hoặc /maps/search/<lat,lng>/: toạ độ nằm ngay trong đường dẫn.
+        var pathPoint: GeoPoint?
+        for cand in [placeName, searchSeg] {
+            if let c = cand, let p = latLng(c) { pathPoint = p; break }
+        }
+        if pathPoint != nil, placeName.flatMap(latLng) != nil { placeName = nil }
         let textKeys = ["q", "query", "destination", "daddr"]
 
         // 2. !3d<lat>!4d<lng> của địa điểm (không lấy khung nhìn @).
@@ -123,20 +147,23 @@ public enum ShareLink {
         if let m = groups(#"!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)"#, in: rawPath).last {
             point = GeoPoint(lat: Double(m[1]) ?? .nan, lon: Double(m[2]) ?? .nan)
         }
-        // 3. q=, ll=, query=, destination= dạng toạ độ.
+        if point == nil { point = pathPoint }
+        // 3. q=, ll=, query=, destination= dạng toạ độ (Apple Maps: coordinate=).
         if point == nil {
-            for k in ["q", "ll", "query", "destination", "daddr"] {
+            for k in ["q", "ll", "query", "destination", "daddr", "coordinate"] {
                 if let v = query[k], let p = latLng(v) { point = p; break }
             }
         }
-        // 4. Chỉ có khung nhìn @lat,lng.
-        if point == nil, let m = groups(#"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)"#, in: rawPath).first {
+        // 4. Chỉ có khung nhìn @lat,lng. Link /search/<chữ> thì không dùng khung nhìn: phải tìm chữ đó.
+        let searchOnlyText = searchSeg != nil && pathPoint == nil
+        if point == nil, !searchOnlyText, let m = groups(#"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)"#, in: rawPath).first {
             point = GeoPoint(lat: Double(m[1]) ?? .nan, lon: Double(m[2]) ?? .nan)
         }
         let text = textKeys.lazy.compactMap { k -> String? in
             guard let v = query[k], latLng(v) == nil else { return nil }
             return v
-        }.first
+        }.first ?? searchSeg.flatMap { latLng($0) == nil ? $0 : nil }
+        if isApple, placeName == nil, let n = query["name"] { placeName = n }
         if let p = point {
             guard p.isValid else { return nil }
             return SharedDestination(name: placeName ?? text, point: p)
@@ -164,6 +191,8 @@ public enum ShareLink {
 
     /// "lat,lng" (đúng hai số) → điểm; không kiểm tra phạm vi ở đây.
     private static func latLng(_ s: String) -> GeoPoint? {
+        var s = s.trimmingCharacters(in: .whitespaces)
+        if s.lowercased().hasPrefix("loc:") { s = String(s.dropFirst(4)) }   // ?q=loc:lat,lng
         let parts = s.split(separator: ",", omittingEmptySubsequences: false)
         guard parts.count == 2,
               let lat = Double(parts[0].trimmingCharacters(in: .whitespaces)),

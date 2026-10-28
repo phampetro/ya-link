@@ -15,8 +15,9 @@ final class SnapshotTests: XCTestCase {
 
     private var report: [String] = []
 
+    @discardableResult
     private func shot(_ name: String, _ ui: DashUI, now: TimeInterval, photo: CGImage? = SnapshotTests.samplePhoto,
-                      maxKB: Double = 20) throws {
+                      maxKB: Double = 20) throws -> CGImage {
         var input = DashRenderer.Input()
         input.photo = photo
         input.date = Date(timeIntervalSince1970: 1_761_640_000)   // 15:26 giờ VN
@@ -29,6 +30,21 @@ final class SnapshotTests: XCTestCase {
         let kb = Double(jpg.count) / 1024
         print(String(format: "SNAPSHOT %-22@ JPEG %5.1f KB", name as NSString, kb))
         XCTAssertLessThan(kb, maxKB, "\(name): khung quá nặng cho đồng hồ")
+        return image
+    }
+
+    /// Điểm ảnh RGB của một vùng (để so sánh vùng an toàn giữa hai khung).
+    private func region(_ image: CGImage, x: Range<Int>, y: Range<Int>) -> [UInt8] {
+        guard let data = image.dataProvider?.data, let ptr = CFDataGetBytePtr(data) else { return [] }
+        let bpp = image.bitsPerPixel / 8
+        var out: [UInt8] = []
+        for yy in y {
+            for xx in x {
+                let o = yy * image.bytesPerRow + xx * bpp
+                for k in 0..<3 { out.append(ptr[o + k]) }
+            }
+        }
+        return out
     }
 
     /// Ảnh nền mẫu: hoàng hôn trên đèo, màu phẳng (như bg-sample.svg).
@@ -62,6 +78,12 @@ final class SnapshotTests: XCTestCase {
         ui.vehicle = VehicleInfo(coolantC: 92, batteryV: 12.8)
         ui.weather = WeatherInfo(tempC: 31, kind: .sun, label: "Nắng nhẹ", place: "Q.1")
         ui.music = MusicInfo(title: "Nơi này có anh", artist: "Sơn Tùng M-TP", duration: 260, position: 112, playing: true)
+        ui.userName = "Trọng"
+        ui.places = SavedPlaces(
+            home: SavedPlace(name: "Nhà", sub: "Quận 7", lat: 10.73, lon: 106.72),
+            work: SavedPlace(name: "Công ty", sub: "Bitexco, Q.1", lat: 10.77, lon: 106.70),
+            favs: [SavedPlace(name: "Cà phê Bờ Hồ", sub: "Q.1", lat: 10.78, lon: 106.69),
+                   SavedPlace(name: "Sân vận động Thống Nhất", sub: "Q.10", lat: 10.76, lon: 106.66)])
         if let d = distance {
             ui.nav = NavInfo(maneuver: .right, distanceToTurnM: d, nextStreet: "Lê Lợi", currentStreet: "Nguyễn Huệ",
                              destination: "Chợ Bến Thành", remainingKm: 7, eta: Date(timeIntervalSince1970: 1_761_641_000),
@@ -86,6 +108,16 @@ final class SnapshotTests: XCTestCase {
         ui.showWelcome(now: 0)
         try shot("05-welcome", ui, now: 1)
         try shot("06-welcome-entry", ui, now: 2.5)
+        try shot("06b-welcome-fade-out", ui, now: 2.25)
+        let anonymous = filled()
+        anonymous.userName = ""
+        anonymous.vehicle = VehicleInfo()
+        anonymous.showWelcome(now: 0)
+        try shot("06c-welcome-no-name", anonymous, now: 1)
+        let skipped = filled()
+        skipped.greetingEnabled = false
+        skipped.showWelcome(now: 0)
+        try shot("06d-greeting-off-entry", skipped, now: 0.9)
     }
 
     func testMusic() throws {
@@ -118,6 +150,54 @@ final class SnapshotTests: XCTestCase {
         ui.nav?.distanceToTurnM = 300
         _ = ui.press(.up, now: 14); _ = ui.press(.up, now: 14.1); _ = ui.press(.up, now: 14.2); _ = ui.press(.up, now: 14.3)
         try shot("15-map-zoom-in-warn", ui, now: 15)
+    }
+
+    func testMapIdleArrowOnly() throws {
+        let ui = filled(nav: nil)
+        _ = ui.press(.down, now: 0)
+        _ = ui.press(.enter, now: 1)
+        try shot("16-map-idle-arrow", ui, now: 10)
+    }
+
+    func testMapMenu() throws {
+        let ui = filled()
+        _ = ui.press(.down, now: 0)
+        _ = ui.press(.enter, now: 1)
+        let plain = try shot("17-map-navigating", ui, now: 20)
+        _ = ui.press(.enterHold, now: 20)
+        let menu = try shot("18-map-menu", ui, now: 21)
+        // Vùng an toàn: nút ＋/－ (x < 56) và thanh dưới (y ≥ 186) giống hệt khi không có menu
+        XCTAssertEqual(region(menu, x: 0..<70, y: 68..<170), region(plain, x: 0..<70, y: 68..<170), "menu đè lên nút ＋/－")
+        XCTAssertEqual(region(menu, x: 0..<480, y: 186..<234), region(plain, x: 0..<480, y: 186..<234), "menu đè lên thanh dưới")
+        XCTAssertNotEqual(region(menu, x: 74..<406, y: 14..<170), region(plain, x: 74..<406, y: 14..<170), "menu phải hiện")
+
+        _ = ui.press(.up, now: 21.5)                       // xoay vòng tới "Yêu thích"
+        _ = ui.press(.enter, now: 21.6)
+        try shot("19-map-menu-favourites", ui, now: 22)
+
+        let long = filled()
+        long.places.favs += [SavedPlace(name: "Bệnh viện Chợ Rẫy", sub: "Q.5", lat: 10.75, lon: 106.66),
+                             SavedPlace(name: "Chợ Bến Thành", sub: "Q.1", lat: 10.77, lon: 106.69)]
+        _ = long.press(.down, now: 0)
+        _ = long.press(.enter, now: 1)
+        _ = long.press(.enterHold, now: 2)
+        _ = long.press(.up, now: 2.1)
+        _ = long.press(.enter, now: 2.2)
+        for t in 0..<3 { _ = long.press(.down, now: 2.3 + Double(t) * 0.1) }   // dòng cuối: danh sách cuộn
+        try shot("20-map-menu-scrolled", long, now: 3)
+
+        let idle = filled(nav: nil)
+        _ = idle.press(.down, now: 0)
+        _ = idle.press(.enter, now: 1)
+        _ = idle.press(.enterHold, now: 2)
+        try shot("21-map-menu-no-nav", idle, now: 3)
+    }
+
+    func testArrival() throws {
+        let ui = filled(nav: 20)
+        ui.startNavigation(ui.nav!, now: 0)
+        ui.arrive(now: 10)
+        try shot("22-arrival", ui, now: 11)
     }
 
     private func filledMapCover() -> DashUI {
