@@ -264,18 +264,18 @@ enum Icons {
         c.stroke(arcPath(center: o, radius: 345, from: pt(776.3, 378.2), to: pt(827.2, 740.3)), rimOut, width: 9)
         c.stroke(arcPath(center: o, radius: 313, from: pt(765.2, 416.0), to: pt(806.1, 707.1)), rimIn, width: 5)
 
-        // Kim nổi (đỉnh 280, đáy 534) và vệt sáng
+        // Kim nổi (đỉnh 366, đáy 588) và vệt sáng
         let needle = CGMutablePath()
-        needle.move(to: pt(512, 280))
-        needle.addLine(to: pt(564, 520))
-        needle.addQuadCurve(to: pt(551, 534), control: pt(565, 534))
-        needle.addLine(to: pt(473, 534))
-        needle.addQuadCurve(to: pt(460, 520), control: pt(459, 534))
+        needle.move(to: pt(512, 366))
+        needle.addLine(to: pt(562, 574))
+        needle.addQuadCurve(to: pt(549, 588), control: pt(563, 588))
+        needle.addLine(to: pt(475, 588))
+        needle.addQuadCurve(to: pt(462, 574), control: pt(461, 588))
         needle.closeSubpath()
         c.fill(needle, RGB.white.cg(0.82))
         c.stroke(needle, RGB.white.cg(0.92), width: 8)
         let shine = CGMutablePath()
-        shine.move(to: pt(512, 322)); shine.addLine(to: pt(481, 500))
+        shine.move(to: pt(512, 408)); shine.addLine(to: pt(484, 560))
         c.stroke(shine, RGB.white.cg(0.7), width: 6)
 
         // Tâm: vòng mờ + chấm trắng (cách xa chân kim)

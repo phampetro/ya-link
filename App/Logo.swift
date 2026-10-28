@@ -21,11 +21,11 @@ private struct Arc: Shape {
 private struct Needle: Shape {
     func path(in rect: CGRect) -> Path {
         var p = Path()
-        p.move(to: CGPoint(x: 512, y: 280))
-        p.addLine(to: CGPoint(x: 564, y: 520))
-        p.addQuadCurve(to: CGPoint(x: 551, y: 534), control: CGPoint(x: 565, y: 534))
-        p.addLine(to: CGPoint(x: 473, y: 534))
-        p.addQuadCurve(to: CGPoint(x: 460, y: 520), control: CGPoint(x: 459, y: 534))
+        p.move(to: CGPoint(x: 512, y: 366))
+        p.addLine(to: CGPoint(x: 562, y: 574))
+        p.addQuadCurve(to: CGPoint(x: 549, y: 588), control: CGPoint(x: 563, y: 588))
+        p.addLine(to: CGPoint(x: 475, y: 588))
+        p.addQuadCurve(to: CGPoint(x: 462, y: 574), control: CGPoint(x: 461, y: 588))
         p.closeSubpath()
         return p
     }
