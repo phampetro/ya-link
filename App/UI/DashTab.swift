@@ -3,7 +3,7 @@ import DashRender
 import ExternalAccessory
 import SwiftUI
 
-/// Tab Đồng hồ: lời chào + trạng thái kết nối, 4 ô số liệu của xe, màn hình đồng hồ xem trước và các nút ▲ ▼ Enter Home.
+/// Tab Đồng hồ: lời chào + trạng thái kết nối, 4 ô số liệu của xe, màn hình đồng hồ xem trước và các nút + − Home.
 struct DashTab: View {
     let link: DashLink
     @ObservedObject var ccu: CCULink
@@ -209,14 +209,14 @@ private struct DashPreview: View {
     }
 }
 
-/// ▲ ▼ [Enter: chạm = Enter, giữ 0,6 s = giữ Enter] Home.
+/// + − Home.
 private struct DashButtons: View {
     let link: DashLink
 
     var body: some View {
         HStack(spacing: 8) {
-            Button("▲") { link.press(.up) }.buttonStyle(.pill)
-            Button("▼") { link.press(.down) }.buttonStyle(.pill)
+            Button("+") { link.press(.up) }.buttonStyle(.pill)
+            Button("−") { link.press(.down) }.buttonStyle(.pill)
             Button("Home") { link.press(.home) }.buttonStyle(.pill)
         }
         .padding(.top, 12)

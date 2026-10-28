@@ -400,13 +400,13 @@ public final class DashUI {
         if showingArrival(now) { return "Đã tới \(arrivedDestination)" }
         if let n = nav, n.distanceToTurnM < 100, !mapOpen { return n.maneuver.prompt(n.nextStreet) }
         switch page {
-        case .music: return volumeMode ? "Âm lượng · ▲▼ chỉnh" : "▲▼ đổi bài · 3 lần: ▲ âm lượng ▼ phát/dừng"
+        case .music: return volumeMode ? "Âm lượng · +/- chỉnh" : "+/- đổi bài · 3×+ âm lượng · 3×- phát/dừng"
         case .home: return homeBarText
         case .map:
-            if menu != nil { return "▲▼ chọn · đúp: xác nhận · Home thoát" }
+            if menu != nil { return "+/- lướt · đúp: chọn · Home thoát" }
             if now < noteUntil { return noteText }
             if now < zoomHintUntil { return "Thu phóng · \(Self.zoomLabels[zoom])" }
-            if now < mapHintUntil { return "▲▼ thu phóng · 3 lần: menu" }
+            if now < mapHintUntil { return "+/- thu phóng · 3 lần: menu" }
             return nav?.currentStreet ?? "Chia sẻ vị trí từ Google Maps"
         }
     }

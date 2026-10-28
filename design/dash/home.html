@@ -70,7 +70,7 @@
   /* Biển tốc độ: app TỰ VẼ vào ảnh (góc trên phải, nhỏ) thay vì dùng biển của đồng hồ, vì biển của đồng hồ
      cố định ở góc dưới phải (x 411, y 135, 62 px) và không đổi chỗ/cỡ được. App gửi cmd 17 limit 0 để tắt biển gốc.
      Viền đỏ dày 5 px để JPEG 4:2:0 không làm răng cưa. */
-  .msign { position: absolute; right: 8px; top: 6px; width: 44px; height: 44px; box-sizing: border-box; border-radius: 50%; border: 5px solid #e0201b; background: #fff; color: #000; display: grid; place-items: center; font: 700 17px/1 var(--font); letter-spacing: -0.02em; }
+  .msign { position: absolute; left: 240px; transform: translateX(-50%); top: 6px; width: 44px; height: 44px; box-sizing: border-box; border-radius: 50%; border: 5px solid #e0201b; background: #fff; color: #000; display: grid; place-items: center; font: 700 17px/1 var(--font); letter-spacing: -0.02em; }
   .msign.off { display: none; }
 
   /* các trang */
@@ -85,7 +85,7 @@
   .mbtn.next { top: 67px; }
   .mbtn.prev { top: 114px; }
   .mbtn.flash, .play.flash { background: rgb(var(--pc)); transform: scale(1.15); }
-  /* Chế độ âm lượng (ba lần ▼): cột ⏭/⏮ đổi thành thanh âm lượng dọc ngay cạnh ＋/－,
+  /* Chế độ âm lượng (3 lần −): cột ⏭/⏮ đổi thành thanh âm lượng dọc ngay cạnh ＋/－,
      ＋ tăng (lên), － giảm (xuống). Tự tắt sau 3 s không bấm. */
   .vol, .vicon { display: none; }
   .music.volmode .mbtn { display: none; }
@@ -136,7 +136,7 @@
   .turn b { display: block; font: 700 26px/28px var(--font); letter-spacing: -0.01em; }
   .turn b small { font: 600 16px/1 var(--font); margin-left: 2px; }
   .turn span { display: block; max-width: 92px; font: 600 16px/20px var(--font); color: #e0e0e0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .eta { position: absolute; left: 240px; right: auto; transform: translateX(-50%); top: 6px; white-space: nowrap; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 9px; background: rgba(0, 0, 0, 0.72); font: 600 17px/1 var(--font); }
+  .eta { position: absolute; left: 72px; right: auto; top: 64px; white-space: nowrap; height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 9px; background: rgba(0, 0, 0, 0.72); font: 600 17px/1 var(--font); }
   .eta span { font-weight: 500; color: #c8c8c8; }
 
   /* Bảng chỉnh thử, nằm ngoài khung 480×234 (không thuộc ảnh gửi lên đồng hồ) */
@@ -318,7 +318,7 @@
   <div class="full btns"><button type="button" id="intro">⏻ Giả lập: mở máy rồi bấm Home</button></div>
   <label>Lời chào</label><label class="full"><input type="checkbox" id="greeton" checked> Bật · tên: <input type="text" id="greetname" value="Trọng" style="width:120px"></label>
   <label>Nút tay lái</label>
-  <div class="full btns"><button type="button" id="up">▲ UP</button><button type="button" id="down">▼ DOWN</button><button type="button" id="homebtn">⌂ Home</button></div>
+  <div class="full btns"><button type="button" id="up">+ UP</button><button type="button" id="down">− DOWN</button><button type="button" id="homebtn">⌂ Home</button></div>
   <label></label>
   <div class="full" style="color:#a1a1a8">Đồng hồ xe chỉ gửi cho app UP, DOWN và Home (Enter do đồng hồ giữ). Bàn phím: ↑ ↓, H = Home. Bấm 2–3 lần trong 0,4 giây = bấm 2/3 lần.<br>Home: 1 lần ↑ hoặc ↓ đổi ảnh nền · 2 lần xoay bánh xe (↑ về Nhạc, ↓ về Bản đồ)<br>Nhạc: ↑ bài sau · ↓ bài trước · 2 lần xoay bánh xe · 3 lần ↑ chỉnh âm lượng (↑ ↓ ±10 %) · 3 lần ↓ phát/dừng<br>Bản đồ: hiện ngay, ↑ phóng to · ↓ thu nhỏ · 2 lần ↑ về Home · 2 lần ↓ sang Nhạc · 3 lần mở menu bản đồ (↑↓ chọn · 2 lần xác nhận · Home quay lại/thoát)<br>Home: đóng âm lượng/menu trước, không thì về trang Home</div>
   <label>Giả lập đồng hồ</label><label class="full"><input type="checkbox" id="fps4"> Chỉ ~4 khung/giây như trên xe</label>
@@ -503,7 +503,7 @@
     drawWheel(wheelRot(performance.now()));
     // Thanh dưới (cmd 3, gửi lại mỗi khi đổi trang): trang Nhạc luôn nhắc an toàn, trang khác theo lựa chọn
     const bar = document.querySelector(".chrome .bar");
-    if (bar) bar.textContent = turnPrompt() ?? (page() === "music" ? (volMode ? "Âm lượng · ▲▼ chỉnh" : "▲▼ đổi bài · 3 lần: ▲ âm lượng ▼ phát/dừng") : page() === "map" ? mapBar() : barText[$("bar").value]);
+    if (bar) bar.textContent = turnPrompt() ?? (page() === "music" ? (volMode ? "Âm lượng · +/- chỉnh" : "+/- đổi bài · 3×+ âm lượng · 3×- phát/dừng") : page() === "map" ? mapBar() : barText[$("bar").value]);
 
     // Bản đồ: biểu tượng hướng rẽ và khoảng cách (≥ 1 km ghi km, dưới 1 km làm tròn 10 m)
     const turnPaths = {
@@ -744,14 +744,14 @@
   }
   function mapBar() {
     const now = performance.now();
-    if (menu) return "▲▼ chọn · đúp: xác nhận · Home thoát";
+    if (menu) return "+/- lướt · đúp: chọn · Home thoát";
     if (now < noteUntil) return noteText;
     if (now < zoomHintUntil) return `Thu phóng · ${SCALE[zoom]}`;
-    if (now < hintUntil) return "▲▼ thu phóng · 3 lần: menu";
+    if (now < hintUntil) return "+/- thu phóng · 3 lần: menu";
     return $("navon").checked ? "Nguyễn Huệ" : "Chia sẻ vị trí từ Google Maps";
   }
   // ===== Menu bản đồ: 3 lần bấm ở trang Bản đồ. App TỰ VẼ menu này vào ảnh (không dùng menu gốc của đồng hồ).
-  // ▲▼ chọn, 2 lần xác nhận, Home thoát/quay lại, tự đóng sau 8 s. "Dừng chỉ đường" chỉ có khi đang chỉ đường.
+  // +/- lướt, 2 lần chọn, Home thoát/quay lại, tự đóng sau 8 s. "Dừng chỉ đường" chỉ có khi đang chỉ đường.
   const places = { home: { name: "Nhà", sub: "Quận 7" }, work: { name: "Công ty", sub: "Bitexco, Q.1" }, favs: [{ name: "Cà phê Bờ Hồ", sub: "Q.1" }, { name: "Sân vận động Thống Nhất", sub: "Q.10" }] };
   let menu = null, menuTimer = null, destName = "Chợ Bến Thành", noteText = "", noteUntil = 0;
   const MI = {

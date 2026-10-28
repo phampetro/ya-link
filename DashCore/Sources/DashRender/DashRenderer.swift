@@ -394,19 +394,19 @@ public struct DashRenderer {
         c.text(d.unit, x: 66 + vw + 2, y: 14, size: 16, weight: .semibold, color: RGB.white.cg())
         c.text(n.nextStreet, x: 66, y: 36.4, size: 16, weight: .semibold, color: Self.mutedText.cg(), maxWidth: 92)
 
-        // Giờ đến và quãng đường còn lại (giữa trên, tâm x 240)
+        // Giờ đến và quãng đường còn lại: cạnh trái, ngay dưới ô rẽ (x ≥ 72 để chừa nút ＋/－ của đồng hồ)
         let t1 = Self.hhmm(n.eta), t2 = "· \(Self.km(n.remainingKm)) km"
         let w1 = c.measure(t1, size: 17, weight: .semibold), w2 = c.measure(t2, size: 17, weight: .medium)
         let total = w1 + 6 + w2 + 20
-        let eta = CGRect(x: 240 - total / 2, y: 6, width: total, height: 30)
+        let eta = CGRect(x: 72, y: 64, width: total, height: 30)
         c.fill(eta, Self.panelColor.cg(0.72), radius: 15)
         c.stroke(eta.insetBy(dx: 0.5, dy: 0.5), RGB.white.cg(0.2), width: 1, radius: 14.5)
-        c.text(t1, x: eta.minX + 10, y: Self.lineY(6, 30, 17), size: 17, weight: .semibold, color: RGB.white.cg())
-        c.text(t2, x: eta.minX + 10 + w1 + 6, y: Self.lineY(6, 30, 17), size: 17, weight: .medium, color: RGB(200, 200, 200).cg())
+        c.text(t1, x: eta.minX + 10, y: Self.lineY(64, 30, 17), size: 17, weight: .semibold, color: RGB.white.cg())
+        c.text(t2, x: eta.minX + 10 + w1 + 6, y: Self.lineY(64, 30, 17), size: 17, weight: .medium, color: RGB(200, 200, 200).cg())
 
-        // Biển tốc độ do app tự vẽ (góc trên phải, 44 px); biển gốc của đồng hồ để tắt (cmd 17 = 0)
+        // Biển tốc độ do app tự vẽ (giữa trên, 44 px); biển gốc của đồng hồ để tắt (cmd 17 = 0)
         if let limit = n.speedLimit {
-            let center = CGPoint(x: c.width - 30, y: 28)
+            let center = CGPoint(x: c.width / 2, y: 28)
             c.fillCircle(center: center, radius: 22, RGB.white.cg())
             c.strokeCircle(center: center, radius: 19.5, Self.bad.cg(), width: 5)
             c.text("\(limit)", x: center.x, y: Self.lineY(center.y - 8.5, 17, 17), size: 17, weight: .bold,

@@ -94,7 +94,7 @@ final class DashUITests: XCTestCase {
         XCTAssertEqual(ui.press(.up, now: 10.3), [], "lần 3 chốt ngay")
         XCTAssertTrue(ui.volumeMode)
         XCTAssertEqual(ui.page, .music)
-        XCTAssertEqual(ui.bottomBarText(now: 10.5), "Âm lượng · ▲▼ chỉnh")
+        XCTAssertEqual(ui.bottomBarText(now: 10.5), "Âm lượng · +/- chỉnh")
         XCTAssertEqual(ui.press(.up, now: 10.6), [.volume(10)], "trong chế độ âm lượng bấm là chỉnh ngay")
         XCTAssertEqual(ui.press(.down, now: 10.7), [.volume(-10)])
         XCTAssertEqual(ui.press(.down, now: 10.8), [.volume(-10)], "bấm liên tiếp không bị coi là đúp")
@@ -105,7 +105,7 @@ final class DashUITests: XCTestCase {
         _ = ui.tick(now: 13.9)
         XCTAssertFalse(ui.volumeMode, "tự đóng sau 3 s không bấm")
         XCTAssertEqual(ui.tick(now: 14), [], "không còn lần bấm treo")
-        XCTAssertEqual(ui.bottomBarText(now: 14), "▲▼ đổi bài · 3 lần: ▲ âm lượng ▼ phát/dừng")
+        XCTAssertEqual(ui.bottomBarText(now: 14), "+/- đổi bài · 3×+ âm lượng · 3×- phát/dừng")
     }
 
     func testMusicTripleDownTogglesPlay() {
@@ -135,7 +135,7 @@ final class DashUITests: XCTestCase {
     func testMusicBarHintFitsAndMentionsGestures() {
         let ui = musicPage()
         let text = ui.bottomBarText(now: 10)
-        XCTAssertEqual(text, "▲▼ đổi bài · 3 lần: ▲ âm lượng ▼ phát/dừng")
+        XCTAssertEqual(text, "+/- đổi bài · 3×+ âm lượng · 3×- phát/dừng")
         XCTAssertLessThanOrEqual(text.count, 42)
     }
 
@@ -158,7 +158,7 @@ final class DashUITests: XCTestCase {
     func testMapShownImmediatelyWithZoomAndHint() {
         let ui = mapPage()
         XCTAssertTrue(ui.mapOpen, "không còn màn bìa")
-        XCTAssertEqual(ui.bottomBarText(now: 1), "▲▼ thu phóng · 3 lần: menu")
+        XCTAssertEqual(ui.bottomBarText(now: 1), "+/- thu phóng · 3 lần: menu")
         XCTAssertEqual(ui.bottomBarText(now: 5), "Chia sẻ vị trí từ Google Maps")
         XCTAssertEqual(press(ui, .up, at: 6), [])
         XCTAssertEqual(ui.zoom, DashUI.defaultZoom + 1, "UP đơn phóng to")
@@ -205,7 +205,7 @@ final class DashUITests: XCTestCase {
         XCTAssertEqual(ui.menu, MapMenu(level: .main, index: 0))
         XCTAssertEqual(ui.zoom, DashUI.defaultZoom, "ba lần không thu phóng")
         XCTAssertEqual(ui.page, .map)
-        XCTAssertEqual(ui.bottomBarText(now: 6), "▲▼ chọn · đúp: xác nhận · Home thoát")
+        XCTAssertEqual(ui.bottomBarText(now: 6), "+/- lướt · đúp: chọn · Home thoát")
         XCTAssertEqual(ui.tick(now: 7), [])
         XCTAssertNotNil(ui.menu)
     }
@@ -409,7 +409,7 @@ final class DashUITests: XCTestCase {
         ui.nav = nav(distance: 60)
         XCTAssertEqual(ui.bottomBarText(now: 0), "Rẽ phải vào Lê Lợi", "dưới 100 m nhắc rẽ ở mọi trang trừ bản đồ")
         _ = press(ui, .down, times: 2, at: 1)
-        XCTAssertEqual(ui.bottomBarText(now: 2), "▲▼ thu phóng · 3 lần: menu", "bản đồ: không nhắc rẽ")
+        XCTAssertEqual(ui.bottomBarText(now: 2), "+/- thu phóng · 3 lần: menu", "bản đồ: không nhắc rẽ")
         XCTAssertEqual(ui.bottomBarText(now: 6), "Nguyễn Huệ")
         _ = press(ui, .up, at: 7)
         XCTAssertEqual(ui.bottomBarText(now: 8), "Thu phóng · 250 m")
@@ -427,7 +427,7 @@ final class DashUITests: XCTestCase {
         ui.startNavigation(nav(distance: 800), now: 0)
         XCTAssertEqual(ui.page, .map)
         XCTAssertTrue(ui.mapOpen)
-        XCTAssertEqual(ui.bottomBarText(now: 1), "▲▼ thu phóng · 3 lần: menu")
+        XCTAssertEqual(ui.bottomBarText(now: 1), "+/- thu phóng · 3 lần: menu")
     }
 
     func testArrivalReturnsHome() {
