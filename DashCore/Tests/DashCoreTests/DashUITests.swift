@@ -9,10 +9,12 @@ final class DashUITests: XCTestCase {
         _ = press(ui, .down, at: 0)
         XCTAssertEqual(ui.page, .map)
         _ = press(ui, .down, at: 1)
-        XCTAssertEqual(ui.page, .music, "xoay vòng: Bản đồ ↓ Nhạc")
-        _ = press(ui, .up, at: 2)
+        XCTAssertEqual(ui.page, .map, "Bản đồ: ↓ một lần là thu nhỏ, không đổi trang")
+        _ = press(ui, .down, times: 2, at: 2)
+        XCTAssertEqual(ui.page, .music, "xoay vòng: Bản đồ, đúp ↓ sang Nhạc")
+        _ = press(ui, .up, at: 3)
         XCTAssertEqual(ui.page, .map, "Nhạc ↑ (xoay vòng) Bản đồ")
-        _ = press(ui, .up, times: 2, at: 3)
+        _ = press(ui, .up, times: 2, at: 4)
         XCTAssertEqual(ui.page, .home, "Bản đồ: đúp ↑ về Home")
     }
 
