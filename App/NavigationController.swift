@@ -91,6 +91,8 @@ final class NavigationController: ObservableObject {
     // MARK: - Chia sẻ
 
     /// Chữ nhận từ tiện ích Chia sẻ (hoặc từ bộ nhớ tạm).
+    static let noCoordinateMessage = "Link này không có toạ độ. Trong Google Maps, chạm giữ trên bản đồ để ghim vị trí, rồi chọn Chia sẻ và sao chép link."
+
     func handleShared(text: String) {
         lastText = text
         state = .resolving
@@ -99,21 +101,15 @@ final class NavigationController: ObservableObject {
                 state = .failed("Không đọc được địa điểm từ nội dung chia sẻ.")
                 return
             }
-            if let p = dest.point {
-                state = .confirm(Pending(name: dest.name ?? dest.searchText ?? "Điểm đến", point: p,
-                                         source: dest.coordinateSource == .viewport ? .viewport : .pin))
+            // Chỉ nhận link có toạ độ ghim chính xác. Link chỉ có địa chỉ chữ, hoặc chỉ có tâm khung nhìn, dễ ra sai chỗ.
+            guard let p = dest.point, dest.coordinateSource == .pin else {
+                onLog?("link bị từ chối: " + (dest.point == nil ? "chỉ có địa chỉ chữ, không có toạ độ" : "chỉ có toạ độ khung nhìn, không phải ghim"))
+                pendingSlot = nil
+                state = .failed(Self.noCoordinateMessage)
+                onToast?("Link không có toạ độ: hãy ghim vị trí rồi chia sẻ")
                 return
             }
-            let query = dest.searchText ?? dest.name ?? ""
-            let found = await searchCandidates(ShareLink.searchQueries(for: query))
-            guard let first = found.first else {
-                onLog?("link chỉ có địa chỉ: MapKit không có kết quả")
-                state = .failed("Không tìm thấy địa điểm từ địa chỉ trong link.")
-                return
-            }
-            onLog?("link chỉ có địa chỉ: \(found.count) kết quả MapKit, chọn: \(first.name)")
-            state = .confirm(Pending(name: first.name, point: first.point, source: .search,
-                                     alternatives: found, selected: 0))
+            state = .confirm(Pending(name: dest.name ?? dest.searchText ?? "Điểm đến", point: p, source: .pin))
         }
     }
 

@@ -25,7 +25,7 @@ struct NavTab: View {
                         nav.handleShared(text: s)
                     }
                 }
-                GroupFoot("Trong Google Maps chọn địa điểm › Chia sẻ › Ya Link.")
+                GroupFoot("Chỉ nhận link có toạ độ: trong Google Maps chạm giữ để ghim vị trí, rồi Chia sẻ và sao chép.")
                 GroupTitle("Địa điểm đã lưu")
                 places
                 GroupFoot("Chạm một nơi để đi ngay. Thêm nơi mới: sao chép link Google Maps rồi bấm “Đặt … từ link”.")
