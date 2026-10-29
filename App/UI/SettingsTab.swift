@@ -330,7 +330,9 @@ struct SettingsTab: View {
                 keyInput = ""
                 keyMessage = (true, "✅ Key hợp lệ, hỗ trợ xe máy. Đã lưu.")
             case .invalidKey:
-                keyMessage = (false, "❌ Key không hợp lệ hoặc chưa bật Routes API. Chưa lưu.")
+                keyMessage = (false, "❌ Google báo key sai. Kiểm tra key dán đủ, không thừa khoảng trắng. Chưa lưu.")
+            case .rejected(let why):
+                keyMessage = (false, "❌ " + SettingsTab.explain(why) + " Chưa lưu.")
             case .twoWheelerUnsupported:
                 keyMessage = (false, "❌ Key đúng nhưng Google chưa hỗ trợ chế độ xe máy ở đây. Chưa lưu.")
             case .network(let m):
@@ -350,6 +352,24 @@ struct SettingsTab: View {
             }
             GroupFoot("Gửi nhật ký cho người hỗ trợ khi đồng hồ hoặc dữ liệu xe không lên.")
         }
+    }
+
+    /// Giải thích câu lỗi của Google bằng tiếng Việt ngắn gọn (kèm câu gốc để tra cứu).
+    static func explain(_ message: String) -> String {
+        let m = message.lowercased()
+        let hint: String
+        if m.contains("billing") {
+            hint = "Dự án chưa bật thanh toán. Gắn tài khoản thanh toán cho dự án."
+        } else if m.contains("has not been used") || m.contains("is disabled") || m.contains("service_disabled") {
+            hint = "Dự án chưa bật Routes API. Vào Thư viện, bật “Routes API”, đợi 1–2 phút."
+        } else if m.contains("referer") || m.contains("restriction") || m.contains("blocked") || m.contains("not authorized") {
+            hint = "Key đang bị hạn chế. Cho phép Routes API và bỏ hạn chế ứng dụng."
+        } else if m.contains("quota") || m.contains("exceeded") {
+            hint = "Hết hạn mức. Kiểm tra mục Thanh toán."
+        } else {
+            hint = "Google từ chối key."
+        }
+        return hint + " (Google: " + String(message.prefix(140)) + ")"
     }
 
     // MARK: - Dòng phiên bản

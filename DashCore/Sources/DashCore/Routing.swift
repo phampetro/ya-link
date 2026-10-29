@@ -275,7 +275,8 @@ public enum GoogleRoutes {
 // MARK: - Planner
 
 public enum KeyTestResult: Equatable {
-    case ok, invalidKey, twoWheelerUnsupported, network(String)
+    /// `rejected`: Google từ chối vì lý do khác key sai (chưa bật thanh toán, chưa bật Routes API, key bị hạn chế…); kèm câu Google trả về.
+    case ok, invalidKey, twoWheelerUnsupported, rejected(String), network(String)
 }
 
 public final class RoutePlanner {
@@ -354,6 +355,13 @@ public final class RoutePlanner {
         return (d, (resp as? HTTPURLResponse)?.statusCode ?? 0)
     }
 
+    /// Câu `error.message` trong JSON lỗi của Google.
+    static func googleMessage(_ data: Data) -> String? {
+        guard let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let e = o["error"] as? [String: Any], let m = e["message"] as? String else { return nil }
+        return m
+    }
+
     public static func testGoogleKey(_ key: String, session: URLSession = .shared) async -> KeyTestResult {
         let body = GoogleRoutes.requestBody(from: GeoPoint(lat: 10.7769, lon: 106.7009),
                                             to: GeoPoint(lat: 10.7626, lon: 106.6602))
@@ -365,9 +373,13 @@ public final class RoutePlanner {
             if code == 200 {
                 return u.contains("ROUTES") ? .ok : .twoWheelerUnsupported
             }
-            if (code == 400 || code == 403),
-               u.contains("API_KEY_INVALID") || u.contains("PERMISSION_DENIED") || u.contains("API KEY NOT VALID") {
+            if u.contains("API_KEY_INVALID") || u.contains("API KEY NOT VALID") {
                 return .invalidKey
+            }
+            if code == 400 || code == 401 || code == 403 || code == 429 {
+                if !u.contains("TWO_WHEELER") || u.contains("PERMISSION_DENIED") {
+                    return .rejected(googleMessage(d) ?? "HTTP \(code)")
+                }
             }
             if u.contains("TWO_WHEELER") || u.contains("TRAVEL MODE") || u.contains("TRAVEL_MODE") {
                 return .twoWheelerUnsupported

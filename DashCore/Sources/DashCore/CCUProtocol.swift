@@ -445,8 +445,9 @@ public struct DDTV1Receiver {
 // MARK: - DDT V2 nhận (xe → điện thoại)
 
 /// Mỗi notify trên E974B9A1: `[c0, c1, fragIndex, lastFragIndex] + bytes` (c0 c1 là bộ đếm).
-/// fragIndex 0 bắt đầu bộ đệm mới; xong khi fragIndex ≥ lastFragIndex.
-/// Lỡ mẩu (số thứ tự nhảy) thì bỏ gói đang ghép, chờ fragIndex 0 kế tiếp.
+/// Xe thật (log 2026-10-29) gửi gói một mẩu là fragIndex 1, lastFragIndex 1 (đánh số từ 1), nên mẩu đầu có
+/// thể là 0 hoặc 1: fragIndex 0, hoặc fragIndex 1 khi chưa có gói nào đang ghép, bắt đầu bộ đệm mới.
+/// Xong khi fragIndex ≥ lastFragIndex. Lỡ mẩu (số thứ tự nhảy) thì bỏ gói đang ghép.
 public struct DDTV2Receiver {
     private var buffer: [UInt8] = []
     private var expected: Int?
@@ -457,7 +458,7 @@ public struct DDTV2Receiver {
         guard b.count >= 4 else { return nil }
         let frag = Int(b[2])
         let last = Int(b[3])
-        if frag == 0 {
+        if frag == 0 || (frag == 1 && expected == nil) {
             buffer = []
         } else if expected != frag {
             expected = nil
