@@ -17,9 +17,10 @@ final class SnapshotTests: XCTestCase {
 
     @discardableResult
     private func shot(_ name: String, _ ui: DashUI, now: TimeInterval, photo: CGImage? = SnapshotTests.samplePhoto,
-                      maxKB: Double = 20) throws -> CGImage {
+                      maxKB: Double = 20, map: MapScene? = nil) throws -> CGImage {
         var input = DashRenderer.Input()
         input.photo = photo
+        input.map = map
         input.date = Date(timeIntervalSince1970: 1_761_640_000)   // 15:26 giờ VN
         let image = try XCTUnwrap(DashRenderer().render(ui, now: now, input: input), name)
         XCTAssertEqual(image.width, 480)
@@ -220,6 +221,32 @@ final class SnapshotTests: XCTestCase {
         w = tap(idle, .down, times: 3, at: w)
         XCTAssertNotNil(idle.menu)
         try shot("21-map-menu-no-nav", idle, now: w)
+    }
+
+    /// Bản đồ nghiêng 3D với dữ liệu ô giả: ô thông tin, nút ＋/－ và thanh dưới giữ nguyên chỗ; mũi tên không nằm dưới thanh dưới.
+    func testMapTiltedKeepsSafeAreas() throws {
+        let store = MapTests.fakeStore(withBlocks: true)
+        let scene = MapScene(center: MapTests.center, headingDeg: 30, route: MapTests.route, passedIndex: 0,
+                             destination: MapTests.route.last, store: store)
+        let ui = filled()
+        tap(ui, .down, times: 2, at: 0)
+        XCTAssertEqual(ui.page, .map)
+        XCTAssertTrue(ui.mapTilt && ui.mapBuildings, "mặc định bật nghiêng và nhà 3D")
+        let tilted = try shot("17d-map-tilted-nav", ui, now: 20, maxKB: 25, map: scene)
+        ui.mapTilt = false
+        let flat = try shot("17e-map-flat-nav", ui, now: 20, maxKB: 25, map: scene)
+        ui.mapTilt = true
+        XCTAssertNotEqual(region(tilted, x: 0..<480, y: 60..<186), region(flat, x: 0..<480, y: 60..<186))
+
+        let arrow = region(tilted, x: 238..<239, y: 157..<158)
+        XCTAssertTrue(arrow.count == 3 && arrow.allSatisfy { $0 > 225 }, "mũi tên phải hiện trên thanh dưới")
+
+        tap(ui, .down, times: 3, at: 20)                   // mở menu bản đồ
+        XCTAssertNotNil(ui.menu)
+        let menu = try shot("18b-map-tilted-menu", ui, now: 22, maxKB: 25, map: scene)
+        XCTAssertEqual(region(menu, x: 0..<70, y: 68..<170), region(tilted, x: 0..<70, y: 68..<170), "menu đè lên nút ＋/－")
+        XCTAssertEqual(region(menu, x: 0..<480, y: 186..<234), region(tilted, x: 0..<480, y: 186..<234), "menu đè lên thanh dưới")
+        XCTAssertNotEqual(region(menu, x: 74..<406, y: 14..<170), region(tilted, x: 74..<406, y: 14..<170), "menu phải hiện")
     }
 
     func testArrival() throws {

@@ -108,8 +108,28 @@ struct SettingsTab: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .frame(minHeight: 50)
+                RowSeparator(inset: 58)
+                HStack(spacing: 12) {
+                    IconTile(symbol: Sym.mapTilt, color: .green)
+                    Text("Bản đồ nghiêng 3D").font(.system(size: 16)).foregroundColor(Theme.text)
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: $settings.mapTilt).labelsHidden().tint(Theme.green)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(minHeight: 50)
+                RowSeparator(inset: 58)
+                HStack(spacing: 12) {
+                    IconTile(symbol: Sym.cube, color: .blue)
+                    Text("Khối nhà 3D (khi phóng to)").font(.system(size: 16)).foregroundColor(Theme.text)
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: $settings.mapBuildings).labelsHidden().tint(Theme.green)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(minHeight: 50)
             }
-            GroupFoot("Ánh màu rất nhẹ ở mép màn hình đồng hồ, đổi theo trang.")
+            GroupFoot("Ánh màu rất nhẹ ở mép màn hình đồng hồ, đổi theo trang. Nghiêng bản đồ về phía trước; nhà nổi khối khi phóng to gần.")
         }
     }
 

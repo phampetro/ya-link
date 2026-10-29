@@ -104,6 +104,8 @@ final class DashLink: NSObject, ObservableObject {
         ui.userName = settings.userName
         ui.greetingEnabled = settings.greetingEnabled
         ui.edgeGlow = settings.edgeGlow
+        ui.mapTilt = settings.mapTilt
+        ui.mapBuildings = settings.mapBuildings
         ui.places = settings.places
         // Nhà / Công ty đã lưu hay chưa: đồng hồ dùng cờ này cho menu gốc của nó
         send(session.setSaved(home: settings.places.home != nil, work: settings.places.work != nil))

@@ -295,7 +295,7 @@ public struct DashRenderer {
     /// Không dẫn đường: chỉ bản đồ + mũi tên vị trí. Có dẫn đường: thêm ô rẽ, giờ đến, biển tốc độ.
     private func drawMapOpen(_ c: Canvas, _ ui: DashUI, pc: RGB, date: Date, map: MapScene?) {
         if let scene = map {
-            MapRenderer.draw(c, scene: scene, zoomIndex: ui.zoom, pc: pc)
+            MapRenderer.draw(c, scene: scene, zoomIndex: ui.zoom, pc: pc, tilt: ui.mapTilt, buildings: ui.mapBuildings)
         } else {
             drawSchematic(c, ui, pc: pc)
         }
