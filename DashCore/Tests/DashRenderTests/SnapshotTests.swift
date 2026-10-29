@@ -225,13 +225,13 @@ final class SnapshotTests: XCTestCase {
 
     /// Bản đồ nghiêng 3D với dữ liệu ô giả: ô thông tin, nút ＋/－ và thanh dưới giữ nguyên chỗ; mũi tên không nằm dưới thanh dưới.
     func testMapTiltedKeepsSafeAreas() throws {
-        let store = MapTests.fakeStore(withBlocks: true)
+        let store = MapTests.fakeStore()
         let scene = MapScene(center: MapTests.center, headingDeg: 30, route: MapTests.route, passedIndex: 0,
                              destination: MapTests.route.last, store: store)
         let ui = filled()
         tap(ui, .down, times: 2, at: 0)
         XCTAssertEqual(ui.page, .map)
-        XCTAssertTrue(ui.mapTilt && ui.mapBuildings, "mặc định bật nghiêng và nhà 3D")
+        XCTAssertTrue(ui.mapTilt, "mặc định bật nghiêng")
         let tilted = try shot("17d-map-tilted-nav", ui, now: 20, maxKB: 25, map: scene)
         ui.mapTilt = false
         let flat = try shot("17e-map-flat-nav", ui, now: 20, maxKB: 25, map: scene)

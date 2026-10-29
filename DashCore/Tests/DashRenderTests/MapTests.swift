@@ -5,7 +5,7 @@ import XCTest
 
 /// Bản đồ vector: một ô giả tự dựng (luôn chạy) và ô thật tải từ OpenFreeMap (bỏ qua nếu không có mạng).
 /// Ảnh chụp lưu cùng thư mục snapshots với SnapshotTests, tên "16-map-*" (ô giả) và "17-map-live-*" (ô thật).
-/// Mặc định bản đồ nghiêng 3D (mapTilt) và nhà khối (mapBuildings) đều bật, như app.
+/// Mặc định bản đồ nghiêng 3D (mapTilt) bật, như app.
 final class MapTests: XCTestCase {
     static let center = MapPoint(lat: 10.7769, lon: 106.7009)           // Q.1, TP.HCM
     static let route: [MapPoint] = [
@@ -13,10 +13,9 @@ final class MapTests: XCTestCase {
         MapPoint(lat: 10.7789, lon: 106.7030), MapPoint(lat: 10.7789, lon: 106.7060), MapPoint(lat: 10.7789, lon: 106.7100),
     ]
 
-    private func ui(zoom: Int, tilt: Bool = true, buildings: Bool = true) -> DashUI {
+    private func ui(zoom: Int, tilt: Bool = true) -> DashUI {
         let ui = DashUI()
         ui.mapTilt = tilt
-        ui.mapBuildings = buildings
         ui.homeBarText = "ODO 3.214 km"
         ui.vehicle = VehicleInfo(coolantC: 92, batteryV: 12.8)
         ui.nav = NavInfo(maneuver: .right, distanceToTurnM: 250, nextStreet: "Lê Lợi", currentStreet: "Nguyễn Huệ",
@@ -36,13 +35,13 @@ final class MapTests: XCTestCase {
     }
 
     @discardableResult
-    private func render(_ name: String, store: TileStore, zoom: Int, tilt: Bool = true, buildings: Bool = true,
+    private func render(_ name: String, store: TileStore, zoom: Int, tilt: Bool = true,
                         maxKB: Double = 25, save: Bool = true) throws -> CGImage {
         var input = DashRenderer.Input()
         input.date = Date(timeIntervalSince1970: 1_761_640_000)
         input.map = MapScene(center: Self.center, headingDeg: 0, route: Self.route, passedIndex: 0,
                              destination: Self.route.last, store: store)
-        let image = try XCTUnwrap(DashRenderer().render(ui(zoom: zoom, tilt: tilt, buildings: buildings), now: 10, input: input), name)
+        let image = try XCTUnwrap(DashRenderer().render(ui(zoom: zoom, tilt: tilt), now: 10, input: input), name)
         let jpg = ImageEncoder.jpeg(image, quality: 0.5)
         if save {
             try Data(ImageEncoder.png(image)).write(to: SnapshotTests.out.appendingPathComponent("\(name).png"))
@@ -69,11 +68,10 @@ final class MapTests: XCTestCase {
 
     private func whole(_ image: CGImage) -> [UInt8] { pixels(image, x: 0..<480, y: 0..<234) }
 
-    /// Ô giả tại (14, 13048, 7698): đường chính, đường nhỏ, nước, công viên, nhà. Các ô lân cận để trống
-    /// (không tải mạng, ảnh không đổi giữa hai lần vẽ).
-    /// `withBlocks`: thêm dãy nhà ngay phía trước xe (bắc) để thấy khối 3D: khi có `render_height` (28 m, 45 m)
-    /// và khi không có (dùng mặc định ~9 m), vài nhà có mã (id) để độ cao khác nhau.
-    static func fakeStore(withBlocks: Bool = false) -> TileStore {
+    /// Ô giả tại (14, 13048, 7698): đường chính, đường nhỏ, nước, công viên, nhà, và lớp `transportation_name`
+    /// (6 đường có tên đi qua vùng nhìn thấy quanh xe). Các ô lân cận để trống (không tải mạng, ảnh không đổi giữa hai lần vẽ).
+    /// `withNames: false` bỏ lớp tên đường (để so sánh có/không có nhãn).
+    static func fakeStore(withNames: Bool = true) -> TileStore {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fake-tiles-\(UUID().uuidString)")
         let store = TileStore(cacheDirectory: dir, session: URLSession(configuration: .ephemeral))
         func line(_ cls: String, _ pts: [(Int, Int)], name: String? = nil) -> MVTFeature {
@@ -86,64 +84,50 @@ final class MapTests: XCTestCase {
                        geometry: [[MVTPoint(x: x, y: y), MVTPoint(x: x + w, y: y), MVTPoint(x: x + w, y: y + h),
                                    MVTPoint(x: x, y: y + h), MVTPoint(x: x, y: y)]])
         }
-        var roads: [MVTFeature] = [
+        let named: [MVTFeature] = [
             line("primary", [(327, 0), (327, 4096)], name: "Nguyễn Huệ"),
             line("primary", [(0, 2457), (4096, 2457)], name: "Lê Lợi"),
             line("secondary", [(0, 1700), (4096, 1900)], name: "Pasteur"),
+            line("secondary", [(700, 0), (700, 4096)], name: "Nam Kỳ Khởi Nghĩa"),
+            line("tertiary", [(1500, 0), (1500, 4096)], name: "Hai Bà Trưng"),
+            line("minor", [(0, 2900), (4096, 2900)], name: "Hẻm 12"),
         ]
+        var roads: [MVTFeature] = named
         for k in stride(from: 0, to: 4096, by: 260) {
             roads.append(line("minor", [(k, 0), (k, 4096)]))
             roads.append(line("minor", [(0, k + 120), (4096, k + 120)]))
         }
         var buildings: [MVTFeature] = []
         for gx in stride(from: 40, to: 3000, by: 260) { for gy in stride(from: 2500, to: 3400, by: 260) { buildings.append(rect(gx, gy, 180, 180)) } }
-        if withBlocks {
-            // Xe ở khoảng (1106, 2050) trong ô; y nhỏ hơn = phía trước (bắc). Mỗi ô giữa hai đường nhỏ có 3 nhà 50 × 140.
-            var serial: UInt64 = 100
-            for col in stride(from: 520, through: 1820, by: 260) {
-                for row in 3...6 {
-                    for j in 0..<3 {
-                        var props: [String: MVTValue] = [:]
-                        switch (row + j) % 3 {
-                        case 0: props["render_height"] = .double(28); props["render_min_height"] = .double(0)
-                        case 1: break                                   // không có render_height
-                        default: props["render_height"] = .int(45)
-                        }
-                        var f = rect(col + 20 + j * 70, row * 260 + 180, 50, 140, props)
-                        if (row + j) % 2 == 0 { f.id = serial; serial += 7 }
-                        buildings.append(f)
-                    }
-                }
-            }
-        }
-        let tile = MVTTile(layers: [
+        var layers: [String: MVTLayer] = [
             "transportation": MVTLayer(name: "transportation", features: roads),
             "water": MVTLayer(name: "water", features: [rect(0, 3600, 4096, 496)]),
             "park": MVTLayer(name: "park", features: [rect(800, 1000, 700, 500)]),
             "building": MVTLayer(name: "building", features: buildings),
-        ])
+        ]
+        if withNames { layers["transportation_name"] = MVTLayer(name: "transportation_name", features: named) }
+        let tile = MVTTile(layers: layers)
         for dy in -2...2 { for dx in -2...2 { store.insertForTesting(MVTTile(), z: 14, x: 13048 + dx, y: 7698 + dy) } }
         store.insertForTesting(tile, z: 14, x: 13048, y: 7698)
         return store
     }
 
     func testFakeTileAllZooms() throws {
-        let store = Self.fakeStore(withBlocks: true)
+        let store = Self.fakeStore()
         for zoom in 0..<DashUI.zoomScales.count {
             try render("16-map-fake-z\(zoom)", store: store, zoom: zoom)
         }
     }
 
-    /// Phẳng và nghiêng ở zoom 3, nhà 3D ở zoom 4 và 5 (có và không có chữ `render_height` trong dữ liệu).
+    /// Phẳng và nghiêng ở zoom 3, 4 và 5.
     func testTiltedVersusFlatSnapshots() throws {
-        let store = Self.fakeStore(withBlocks: true)
+        let store = Self.fakeStore()
         let flat3 = try render("16-map-flat-z3", store: store, zoom: 3, tilt: false)
         let tilt3 = try render("16-map-tilt-z3", store: store, zoom: 3)
         XCTAssertNotEqual(whole(flat3), whole(tilt3), "bản đồ nghiêng phải khác bản đồ phẳng")
         try render("16-map-flat-z4", store: store, zoom: 4, tilt: false)
-        let tilt4 = try render("16-map-tilt-z4-3d", store: store, zoom: 4)
-        let tilt5 = try render("16-map-tilt-z5-3d", store: store, zoom: 5)
-        try render("16-map-tilt-z5-no-3d", store: store, zoom: 5, buildings: false)
+        let tilt4 = try render("16-map-tilt-z4", store: store, zoom: 4)
+        let tilt5 = try render("16-map-tilt-z5", store: store, zoom: 5)
         // Phần bản đồ (trên thanh dưới) của ảnh nghiêng ở zoom 4 và 5 phải khác nhau
         XCTAssertNotEqual(pixels(tilt4, x: 0..<480, y: 0..<186), pixels(tilt5, x: 0..<480, y: 0..<186))
 
@@ -154,31 +138,30 @@ final class MapTests: XCTestCase {
         }
     }
 
-    /// Nhà chỉ nổi khối từ mức zoom 4 (250 m) và chỉ khi bật mapBuildings (và bản đồ đang nghiêng).
-    func testBuildingsOnlyWhenCloseAndEnabled() throws {
-        let store = Self.fakeStore(withBlocks: true)
-        for zoom in 0...3 {
-            let on = try render("tmp", store: store, zoom: zoom, buildings: true, save: false)
-            let off = try render("tmp", store: store, zoom: zoom, buildings: false, save: false)
-            XCTAssertEqual(whole(on), whole(off), "zoom \(zoom): chưa có nhà 3D")
+    /// Tên đường phải hiện (khi nghiêng lẫn khi phẳng): cùng cảnh có và không có lớp `transportation_name` phải khác nhau
+    /// ở vùng nhìn thấy, và ảnh có nhãn vẫn nhỏ gọn, mũi tên còn nguyên.
+    func testStreetLabelsAppearWhenTilted() throws {
+        for zoom in [3, 4, 5] {
+            let withNames = try render("16-map-labels-tilt-z\(zoom)", store: Self.fakeStore(), zoom: zoom)
+            let without = try render("tmp", store: Self.fakeStore(withNames: false), zoom: zoom, save: false)
+            XCTAssertNotEqual(pixels(withNames, x: 50..<430, y: 66..<180), pixels(without, x: 50..<430, y: 66..<180),
+                              "zoom \(zoom): nghiêng phải có tên đường")
+            let p = pixels(withNames, x: 238..<239, y: 157..<158)
+            XCTAssertTrue(p.count == 3 && p.allSatisfy { $0 > 225 }, "mũi tên bị che")
+            let flatNames = try render("tmp", store: Self.fakeStore(), zoom: zoom, tilt: false, save: false)
+            let flatNone = try render("tmp", store: Self.fakeStore(withNames: false), zoom: zoom, tilt: false, save: false)
+            XCTAssertNotEqual(pixels(flatNames, x: 50..<430, y: 14..<180), pixels(flatNone, x: 50..<430, y: 14..<180),
+                              "zoom \(zoom): bản đồ phẳng phải có tên đường")
         }
-        for zoom in [4, 5] {
-            let on = try render("tmp", store: store, zoom: zoom, buildings: true, save: false)
-            let off = try render("tmp", store: store, zoom: zoom, buildings: false, save: false)
-            XCTAssertNotEqual(whole(on), whole(off), "zoom \(zoom): phải có nhà 3D khi bật")
-            // Vẽ lại cùng cài đặt cho ra đúng cùng ảnh (so sánh trên ổn định)
-            let again = try render("tmp", store: store, zoom: zoom, buildings: true, save: false)
-            XCTAssertEqual(whole(on), whole(again))
-            // Bản đồ phẳng không dựng khối, bật hay tắt đều giống nhau
-            let flatOn = try render("tmp", store: store, zoom: zoom, tilt: false, buildings: true, save: false)
-            let flatOff = try render("tmp", store: store, zoom: zoom, tilt: false, buildings: false, save: false)
-            XCTAssertEqual(whole(flatOn), whole(flatOff), "zoom \(zoom): bản đồ phẳng không có khối")
-        }
+        // Dưới zoom 3 chưa có tên đường
+        let low = try render("tmp", store: Self.fakeStore(), zoom: 2, save: false)
+        let lowNone = try render("tmp", store: Self.fakeStore(withNames: false), zoom: 2, save: false)
+        XCTAssertEqual(whole(low), whole(lowNone))
     }
 
-    /// Dựng khối nhà (≤ 250 nhà) và phép chiếu phải đủ nhanh để gửi liên tục cho đồng hồ.
+    /// Phép chiếu phối cảnh và nhãn phải đủ nhanh để gửi liên tục cho đồng hồ.
     func testTiltedRenderIsFast() throws {
-        let store = Self.fakeStore(withBlocks: true)
+        let store = Self.fakeStore()
         var input = DashRenderer.Input()
         input.map = MapScene(center: Self.center, headingDeg: 20, route: Self.route, passedIndex: 0,
                              destination: Self.route.last, store: store)
@@ -255,7 +238,7 @@ final class MapTests: XCTestCase {
         print("LIVE-TILE layers: \(counts)")
         XCTAssertNotNil(tile.layers["transportation"], "ô thật phải có lớp đường")
         XCTAssertGreaterThan(tile.layers["transportation"]?.features.count ?? 0, 50)
-        XCTAssertNotNil(tile.layers["building"], "ô thật phải có lớp nhà (để dựng khối 3D)")
+        XCTAssertNotNil(tile.layers["building"], "ô thật phải có lớp nhà")
         Thread.sleep(forTimeInterval: 4)    // chờ các ô lân cận
         for zoom in [0, 2, 3, 4, 5] {
             try render("17-map-live-z\(zoom)", store: store, zoom: zoom, maxKB: 40)

@@ -214,7 +214,6 @@ enum Sym {
     static let shield = "checkmark.shield.fill"
     static let sparkles = "sparkles"
     static let mapTilt = "map.fill"
-    static let cube = "cube.fill"
     static let person = "person.fill"
     static let play = "play.fill"
     static let photo = "photo.on.rectangle"

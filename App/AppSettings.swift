@@ -53,9 +53,6 @@ final class AppSettings: ObservableObject {
     @Published var mapTilt: Bool {
         didSet { defaults.set(mapTilt, forKey: "mapTilt"); onProfileChange?() }
     }
-    @Published var mapBuildings: Bool {
-        didSet { defaults.set(mapBuildings, forKey: "mapBuildings"); onProfileChange?() }
-    }
     @Published var places: SavedPlaces {
         didSet {
             if let d = try? JSONEncoder().encode(places) { defaults.set(d, forKey: "places") }
@@ -89,7 +86,6 @@ final class AppSettings: ObservableObject {
         greetingEnabled = d.object(forKey: "greetingEnabled") as? Bool ?? true
         edgeGlow = d.object(forKey: "edgeGlow") as? Bool ?? true
         mapTilt = d.object(forKey: "mapTilt") as? Bool ?? true
-        mapBuildings = d.object(forKey: "mapBuildings") as? Bool ?? true
         if let data = d.data(forKey: "places"), let p = try? JSONDecoder().decode(SavedPlaces.self, from: data) {
             places = p
         } else {

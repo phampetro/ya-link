@@ -52,8 +52,6 @@ public final class DashUI {
     public var edgeGlow = true
     /// Bản đồ nghiêng 3D (phối cảnh nhìn về phía trước). Tắt: bản đồ phẳng như cũ.
     public var mapTilt = true
-    /// Khối nhà 3D khi phóng to gần (mức zoom 250 m và 150 m).
-    public var mapBuildings = true
 
     // Trạng thái
     public private(set) var rotation = 1          // bước bánh xe, không chia dư (để xoay vòng mượt)

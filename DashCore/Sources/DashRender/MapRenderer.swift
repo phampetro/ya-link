@@ -31,7 +31,7 @@ struct GP {
 /// Vẽ bản đồ vector (OpenFreeMap, lược đồ OpenMapTiles) bằng CPU. Mỗi mức zoom vẽ lại với chi tiết khác nhau:
 /// xa (0–1) đường lớn + tên quận · vừa (2–3) thêm đường nhỏ + tên đường · gần (4–5) thêm hẻm, cây xăng, bệnh viện, nhà.
 /// Chế độ nghiêng: bản đồ phẳng được chiếu phối cảnh (camera nghiêng `tiltDeg` độ), mũi tên nằm thấp, đường phía trước
-/// thu nhỏ dần rồi mờ vào nền; ở zoom gần (4–5) nhà được dựng thành khối.
+/// thu nhỏ dần rồi mờ vào nền.
 enum MapRenderer {
     /// Mét trên mỗi điểm ảnh theo mức zoom của DashUI (2 km … 150 m).
     static let metersPerPixel: [Double] = [9.0, 4.5, 2.6, 1.7, 1.0, 0.6]
@@ -56,16 +56,6 @@ enum MapRenderer {
     static let cosT = cos(52.0 * Double.pi / 180)
     /// Phía sau mũi tên: cắt mặt đất ở d = nearD (đã nằm ngoài màn hình) để phép chiếu không bị méo.
     static let nearD = -120.0
-
-    // Nhà 3D
-    static let maxBuildings = 250
-    static let minBuildingZoom = 4
-    /// Phóng đại chiều cao một chút để khối nhà dễ nhìn ở màn hình nhỏ.
-    static let heightBoost = 1.6
-    static let defaultHeightM = 9.0
-    static let roofColor = RGB(74, 81, 94)
-    static let wallLight = RGB(52, 58, 70)
-    static let wallDark = RGB(26, 30, 38)
 
     /// Vùng bị đồng hồ hoặc ô thông tin che: không đặt chữ và icon ở đây.
     static let busyZones: [CGRect] = [
@@ -100,12 +90,12 @@ enum MapRenderer {
             return MapRenderer.camDist / max(40, MapRenderer.camDist + d * MapRenderer.sinT)
         }
 
-        /// Chiếu lên màn hình; `h` là độ cao so với mặt đất (điểm ảnh ở tỉ lệ tại mũi tên).
-        func project(_ g: GP, height h: Double = 0) -> CGPoint {
+        /// Chiếu mặt đất lên màn hình.
+        func project(_ g: GP) -> CGPoint {
             guard tilt else { return CGPoint(x: 238 + g.u, y: 160 - g.d) }
-            let z = MapRenderer.camDist + g.d * MapRenderer.sinT - h * MapRenderer.cosT
+            let z = MapRenderer.camDist + g.d * MapRenderer.sinT
             let s = MapRenderer.camDist / max(40, z)
-            return CGPoint(x: 238 + g.u * s, y: 160 - (g.d * MapRenderer.cosT + h * MapRenderer.sinT) * s)
+            return CGPoint(x: 238 + g.u * s, y: 160 - g.d * MapRenderer.cosT * s)
         }
 
         func screen(worldX: Double, worldY: Double) -> CGPoint {
@@ -218,16 +208,6 @@ enum MapRenderer {
         }
     }
 
-    static func number(_ v: MVTValue?) -> Double? {
-        guard let v = v else { return nil }
-        switch v {
-        case .double(let d): return d
-        case .int(let i): return Double(i)
-        case .string(let s): return Double(s)
-        case .bool: return nil
-        }
-    }
-
     /// Mờ dần vào nền ở mép xa của bản đồ nghiêng (không có đường chân trời, không có bầu trời).
     static func drawFarFade(_ c: Canvas) {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return }
@@ -240,20 +220,8 @@ enum MapRenderer {
         c.ctx.restoreGState()
     }
 
-    /// Nhà đã chọn để dựng khối.
-    struct Block {
-        var pts: [GP]
-        var base: Double        // độ cao đáy (điểm ảnh ở tỉ lệ mũi tên)
-        var top: Double
-        var orient: Double      // +1 nếu các đỉnh đi ngược chiều kim đồng hồ trong (u, d), -1 nếu ngược lại
-        var depth: Double       // d trung bình: vẽ xa trước
-        var dist: Double        // khoảng cách tới mũi tên: lấy gần trước khi vượt ngân sách
-        var tone: Double        // biến thiên sáng tối theo mã nhà, -0.5 … 0.5
-    }
-
-    static func draw(_ c: Canvas, scene: MapScene, zoomIndex zi: Int, pc: RGB, tilt: Bool = false, buildings: Bool = false) {
+    static func draw(_ c: Canvas, scene: MapScene, zoomIndex zi: Int, pc: RGB, tilt: Bool = false) {
         let v = makeView(scene, zoomIndex: zi, tilt: tilt)
-        let draw3D = tilt && buildings && zi >= minBuildingZoom
         let ct = Mercator.tile(scene.center, z: v.z)
         let reach = tilt ? 700.0 : 300.0
         let n = min(2, max(1, Int(ceil(reach / v.k / 256))))
@@ -309,7 +277,7 @@ enum MapRenderer {
                 c.fill(polygonPath(f, tx, ty, e), green.cg(), evenOdd: true)
             }
         }
-        if zi >= 5 && !draw3D {
+        if zi >= 5 {
             eachFeature("building") { f, tx, ty, e in
                 if f.kind == .polygon { c.fill(polygonPath(f, tx, ty, e), building.cg(), evenOdd: true) }
             }
@@ -327,72 +295,6 @@ enum MapRenderer {
             for band in tierBands[t].keys.sorted() {
                 guard let path = tierBands[t][band] else { continue }
                 c.stroke(path, roadColors[t].cg(), width: max(1, widths[t][zi] * CGFloat(band) / 10))
-            }
-        }
-
-        // Nhà dựng khối (chỉ khi nghiêng, zoom gần): xa vẽ trước, mái sáng, mặt bên tối hơn
-        if draw3D {
-            let mpp = metersPerPixel[zi]
-            var blocks: [Block] = []
-            eachFeature("building") { f, tx, ty, e in
-                guard f.kind == .polygon, let ring = f.geometry.first, ring.count >= 4,
-                      f.properties["hide_3d"]?.stringValue != "true" else { return }
-                let g0 = gp(ring[0], tx, ty, e)
-                if g0.d < -100 || g0.d > 480 || abs(g0.u) * v.scale(g0.d) > 330 { return }
-                var pts = ring.map { gp($0, tx, ty, e) }
-                if let first = pts.first, let last = pts.last, first.u == last.u && first.d == last.d { pts.removeLast() }
-                guard pts.count >= 3 else { return }
-                var a2 = 0.0, su = 0.0, sd = 0.0
-                for i in 0..<pts.count {
-                    let p = pts[i], q = pts[(i + 1) % pts.count]
-                    a2 += p.u * q.d - q.u * p.d
-                    su += p.u
-                    sd += p.d
-                }
-                if abs(a2) < 120 { return }            // nhà nhỏ hơn ~60 điểm ảnh vuông: bỏ
-                let cnt = Double(pts.count)
-                let cu = su / cnt, cd = sd / cnt
-
-                let seed = f.id ?? UInt64(truncatingIfNeeded: (ring[0].x &* 73856093) ^ (ring[0].y &* 19349663))
-                var h = seed &* 0x9E37_79B9_7F4A_7C15
-                h ^= h >> 29
-                let r = Double(h % 1000) / 1000
-                let baseM = max(0, number(f.properties["render_min_height"]) ?? 0)
-                let topM = min(120, max(number(f.properties["render_height"]) ?? defaultHeightM * (0.75 + 0.6 * r), baseM + 3))
-                blocks.append(Block(pts: pts, base: baseM / mpp * heightBoost, top: topM / mpp * heightBoost,
-                                    orient: a2 > 0 ? 1 : -1, depth: cd, dist: hypot(cu, cd), tone: r - 0.5))
-            }
-            if blocks.count > maxBuildings {
-                blocks.sort { $0.dist < $1.dist }
-                blocks.removeSubrange(maxBuildings...)
-            }
-            blocks.sort { $0.depth > $1.depth }
-
-            let camD = -camDist * sinT              // vị trí camera trên mặt đất (phía sau mũi tên)
-            for b in blocks {
-                let count = b.pts.count
-                for i in 0..<count {
-                    let p = b.pts[i], q = b.pts[(i + 1) % count]
-                    let ex = q.u - p.u, ey = q.d - p.d
-                    let len = hypot(ex, ey)
-                    if len < 0.5 { continue }
-                    let nu = b.orient * ey / len, nd = -b.orient * ex / len     // pháp tuyến hướng ra ngoài
-                    let mu = (p.u + q.u) / 2, md = (p.d + q.d) / 2
-                    if nu * (0 - mu) + nd * (camD - md) <= 0 { continue }       // mặt quay lưng với camera
-                    let lit = max(0, min(1, 0.5 - 0.35 * nu - 0.15 * nd)) + b.tone * 0.12
-                    let wall = CGMutablePath()
-                    wall.addLines(between: [v.project(p, height: b.base), v.project(q, height: b.base),
-                                            v.project(q, height: b.top), v.project(p, height: b.top)])
-                    wall.closeSubpath()
-                    c.fill(wall, RGB(wallDark.r + (wallLight.r - wallDark.r) * lit,
-                                     wallDark.g + (wallLight.g - wallDark.g) * lit,
-                                     wallDark.b + (wallLight.b - wallDark.b) * lit).cg())
-                }
-                let roof = CGMutablePath()
-                roof.addLines(between: b.pts.map { v.project($0, height: b.top) })
-                roof.closeSubpath()
-                let d = b.tone * 14
-                c.fill(roof, RGB(roofColor.r + d, roofColor.g + d, roofColor.b + d).cg())
             }
         }
 
@@ -458,21 +360,65 @@ enum MapRenderer {
             }
         }
         if zi >= 3 {
-            var seen = Set<String>()
-            var cands: [(name: String, p: CGPoint)] = []
+            // Mỗi đường có tên: lấy mẫu các đỉnh của mọi đoạn, giữ đỉnh nằm trong vùng nhìn thấy và cách mũi tên đủ xa,
+            // chọn đỉnh gần mũi tên (nghiêng) hoặc gần tâm màn hình (phẳng) nhất.
+            let winMinX = 50.0, winMaxX = 430.0
+            let winMinY = tilt ? 66.0 : 14.0, winMaxY = 180.0
+            let ref = tilt ? CGPoint(x: 238, y: 160) : CGPoint(x: 240, y: 97)
+            var found: [(name: String, p: CGPoint, dist: Double)] = []
             eachFeature("transportation_name") { f, tx, ty, e in
                 guard f.kind == .line, let name = f.properties["name"]?.stringValue,
-                      let tier = roadTier(f.properties["class"]?.stringValue), tier <= (zi >= 5 ? 2 : 1),
-                      let part = f.geometry.max(by: { $0.count < $1.count }), part.count >= 2,
-                      let mid = labelPoint(part[part.count / 2], tx, ty, e) else { return }
-                cands.append((name, mid))
+                      let tier = roadTier(f.properties["class"]?.stringValue), tier <= 2 else { return }
+                var best: CGPoint?
+                var bestScore = Double.infinity
+                for part in f.geometry where part.count >= 2 {
+                    // ~40 đỉnh mỗi đoạn; đoạn thẳng dài (ô chỉ có hai đỉnh ở hai mép) được chia nhỏ để vẫn có điểm trong vùng nhìn.
+                    let step = max(1, part.count / 40)
+                    var samples: [MVTPoint] = []
+                    var i = 0
+                    while i < part.count {
+                        samples.append(part[i])
+                        if step == 1, i + 1 < part.count {
+                            let a = part[i], b = part[i + 1]
+                            let segLen = hypot(Double(b.x - a.x), Double(b.y - a.y))
+                            let subs = min(32, max(1, Int(segLen / (Double(e) / 64))))
+                            if subs > 1 {
+                                for j in 1..<subs {
+                                    let t = Double(j) / Double(subs)
+                                    samples.append(MVTPoint(x: a.x + Int((Double(b.x - a.x) * t).rounded()),
+                                                            y: a.y + Int((Double(b.y - a.y) * t).rounded())))
+                                }
+                            }
+                        }
+                        i += step
+                    }
+                    for sp in samples {
+                        guard let s = labelPoint(sp, tx, ty, e),
+                              Double(s.x) >= winMinX, Double(s.x) <= winMaxX,
+                              Double(s.y) >= winMinY, Double(s.y) <= winMaxY,
+                              hypot(Double(s.x) - 238, Double(s.y) - 160) >= 34 else { continue }
+                        let score = hypot(Double(s.x) - Double(ref.x), Double(s.y) - Double(ref.y))
+                        if score < bestScore {
+                            bestScore = score
+                            best = s
+                        }
+                    }
+                }
+                if let b = best {
+                    found.append((name, b, hypot(Double(b.x) - 238, Double(b.y) - 160)))
+                }
             }
-            if tilt {
-                cands.sort { hypot($0.p.x - 238, $0.p.y - 160) < hypot($1.p.x - 238, $1.p.y - 160) }
+            found.sort { $0.dist < $1.dist }
+            var seen = Set<String>()
+            var cands: [(name: String, p: CGPoint)] = []
+            for item in found where !seen.contains(item.name) {
+                seen.insert(item.name)
+                cands.append((item.name, item.p))
             }
+            seen.removeAll()
             var placed = 0
             for cand in cands where !seen.contains(cand.name) {
-                if tilt && placed >= 5 { break }
+                if tilt && placed >= 6 { break }
                 let w = c.measure(cand.name, size: 16, weight: .semibold) + 14
                 if place(CGRect(x: cand.p.x - w / 2, y: cand.p.y - 11, width: w, height: 22)) {
                     seen.insert(cand.name)
