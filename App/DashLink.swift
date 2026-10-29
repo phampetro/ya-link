@@ -78,6 +78,7 @@ final class DashLink: NSObject, ObservableObject {
         navigation = NavigationController(ui: ui, settings: settings, clock: { Date().timeIntervalSince(t0) })
         navigation.onChange = { [weak self] in self?.dirty = true }
         navigation.onToast = { [weak self] text in self?.toaster.show(text) }
+        navigation.onLog = { [weak self] text in self?.add("đường: \(text)") }
         navigation.onStarted = { [weak self] info in self?.sendTurnBox(info) }
         settings.onProfileChange = { [weak self] in self?.pushProfile() }
     }

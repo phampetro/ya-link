@@ -76,6 +76,14 @@ public struct SpeedLimitSpan: Equatable {
     public init(start: Int, end: Int, kmh: Int) { self.start = start; self.end = end; self.kmh = kmh }
 }
 
+/// Tên đường theo thực tế dọc tuyến (từ trace_attributes), chỉ số theo `Route.points`, cả hai đầu đều tính.
+public struct StreetSpan: Equatable {
+    public var start: Int
+    public var end: Int
+    public var name: String
+    public init(start: Int, end: Int, name: String) { self.start = start; self.end = end; self.name = name }
+}
+
 public struct Route: Equatable {
     public enum Source: String { case valhalla, google }
     public var points: [GeoPoint]
@@ -83,17 +91,18 @@ public struct Route: Equatable {
     public var totalM: Double
     public var durationS: Double
     public var speedLimits: [SpeedLimitSpan]
+    public var streetSpans: [StreetSpan]
     public var source: Source
 
     public init(points: [GeoPoint], steps: [RouteStep], totalM: Double, durationS: Double,
-                speedLimits: [SpeedLimitSpan] = [], source: Source) {
+                speedLimits: [SpeedLimitSpan] = [], streetSpans: [StreetSpan] = [], source: Source) {
         self.points = points; self.steps = steps; self.totalM = totalM; self.durationS = durationS
-        self.speedLimits = speedLimits; self.source = source
+        self.speedLimits = speedLimits; self.streetSpans = streetSpans; self.source = source
     }
 
     public static func == (a: Route, b: Route) -> Bool {
         a.steps == b.steps && a.totalM == b.totalM && a.durationS == b.durationS
-            && a.speedLimits == b.speedLimits && a.source == b.source
+            && a.speedLimits == b.speedLimits && a.streetSpans == b.streetSpans && a.source == b.source
             && a.points.count == b.points.count
             && zip(a.points, b.points).allSatisfy { p in p.0.lat == p.1.lat && p.0.lon == p.1.lon }
     }
@@ -177,11 +186,22 @@ public enum Valhalla {
     }
 
     /// Giới hạn tốc độ. Nếu có `matched_points` thì chỉ số theo điểm đầu vào, nếu không theo shape của edge.
-    public static func parseTrace(_ data: Data) throws -> (matchedLengthKm: Double, limits: [SpeedLimitSpan]) {
+    public static func parseTrace(_ data: Data) throws -> (matchedLengthKm: Double, limits: [SpeedLimitSpan], streets: [StreetSpan]) {
         let o = try jsonObject(data)
         guard let edges = o["edges"] as? [[String: Any]] else { throw RoutingError.badResponse }
         let length = edges.reduce(0.0) { $0 + (num($1["length"]) ?? 0) }
         let kmhOf: [Int] = edges.map { Int(num($0["speed_limit"]) ?? 0) }
+        let nameOf: [String] = edges.map { ($0["names"] as? [String])?.first(where: { !$0.isEmpty }) ?? "" }
+        var streets: [StreetSpan] = []
+        func addStreet(_ s: Int, _ e: Int, _ name: String) {
+            guard !name.isEmpty, e >= s else { return }
+            if var last = streets.last, last.name == name, s <= last.end + 1 {
+                last.end = max(last.end, e)
+                streets[streets.count - 1] = last
+            } else {
+                streets.append(StreetSpan(start: s, end: e, name: name))
+            }
+        }
         var spans: [SpeedLimitSpan] = []
         func add(_ s: Int, _ e: Int, _ kmh: Int) {
             guard kmh > 0, kmh < 250, e >= s else { return }
@@ -196,13 +216,15 @@ public enum Valhalla {
             for (i, m) in matched.enumerated() {
                 guard let e = num(m["edge_index"]).map({ Int($0) }), e >= 0, e < kmhOf.count else { continue }
                 add(i, i, kmhOf[e])
+                addStreet(i, i, nameOf[e])
             }
         } else {
             for (i, e) in edges.enumerated() {
                 add(Int(num(e["begin_shape_index"]) ?? 0), Int(num(e["end_shape_index"]) ?? 0), kmhOf[i])
+                addStreet(Int(num(e["begin_shape_index"]) ?? 0), Int(num(e["end_shape_index"]) ?? 0), nameOf[i])
             }
         }
-        return (length, spans)
+        return (length, spans, streets)
     }
 }
 
@@ -283,6 +305,8 @@ public final class RoutePlanner {
     public let googleKey: String?
     public let session: URLSession
     public var onGoogleCall: (() -> Void)?
+    /// Dòng chẩn đoán ngắn (app ghi vào nhật ký): trace thành công hay lỗi, bao nhiêu đoạn có giới hạn tốc độ.
+    public var onDiag: ((String) -> Void)?
     public static let maxTracePoints = 400
 
     public init(googleKey: String?, session: URLSession = .shared) {
@@ -298,13 +322,28 @@ public final class RoutePlanner {
                    abs(t.matchedLengthKm * 1000 - g.totalM) / g.totalM <= 0.2 {
                     var r = g
                     r.speedLimits = t.limits
+                    r.streetSpans = t.streets
+                    diag("Google", r)
                     return r
                 }
             }
         }
         var r = try await valhallaRoute(from: from, to: to, via: via)
-        if let t = try? await trace(r.points) { r.speedLimits = t.limits }
+        do {
+            let t = try await trace(r.points)
+            r.speedLimits = t.limits
+            r.streetSpans = t.streets
+        } catch {
+            onDiag?("trace_attributes lỗi: \(error.localizedDescription)")
+        }
+        diag("Valhalla", r)
         return r
+    }
+
+    private func diag(_ source: String, _ r: Route) {
+        let covered = r.speedLimits.reduce(0) { $0 + max(0, $1.end - $1.start + 1) }
+        let pct = r.points.isEmpty ? 0 : min(100, covered * 100 / r.points.count)
+        onDiag?("tuyến \(source): \(r.points.count) điểm, \(r.steps.count) bước, \(r.speedLimits.count) đoạn có giới hạn tốc độ (phủ \(pct)% tuyến), \(r.streetSpans.count) đoạn tên đường")
     }
 
     func valhallaRoute(from: GeoPoint, to: GeoPoint, via: [GeoPoint]) async throws -> Route {
@@ -320,7 +359,7 @@ public final class RoutePlanner {
     }
 
     /// Trace (lấy mẫu tối đa `maxTracePoints` điểm), đổi chỉ số về `points` gốc.
-    func trace(_ points: [GeoPoint]) async throws -> (matchedLengthKm: Double, limits: [SpeedLimitSpan]) {
+    func trace(_ points: [GeoPoint]) async throws -> (matchedLengthKm: Double, limits: [SpeedLimitSpan], streets: [StreetSpan]) {
         let n = points.count
         guard n >= 2 else { throw RoutingError.noRoute }
         let stride = max(1, Int((Double(n) / Double(Self.maxTracePoints)).rounded(.up)))
@@ -335,7 +374,13 @@ public final class RoutePlanner {
             let end = b + 1 < idx.count ? idx[b + 1] - 1 : n - 1
             return SpeedLimitSpan(start: idx[a], end: max(idx[a], end), kmh: s.kmh)
         }
-        return (t.matchedLengthKm, limits)
+        let streets: [StreetSpan] = t.streets.compactMap { s in
+            let a = min(max(s.start, 0), idx.count - 1), b = min(max(s.end, 0), idx.count - 1)
+            guard a <= b else { return nil }
+            let end = b + 1 < idx.count ? idx[b + 1] - 1 : n - 1
+            return StreetSpan(start: idx[a], end: max(idx[a], end), name: s.name)
+        }
+        return (t.matchedLengthKm, limits, streets)
     }
 
     private func post(_ url: URL, _ body: Data, headers: [String: String]) async throws -> Data {

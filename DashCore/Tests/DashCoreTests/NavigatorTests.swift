@@ -12,6 +12,18 @@ final class NavigatorTests: XCTestCase {
         GeoPoint(lat: lat0 + y / k, lon: lon0 + x / (k * cos(lat0 * .pi / 180)))
     }
 
+    /// Tên đường theo thực tế đổi khi đi thẳng qua đường khác, không cần chỗ rẽ.
+    func testCurrentStreetFollowsRealStreetNotOnlyTurns() {
+        var r = makeRoute()
+        r.streetSpans = [StreetSpan(start: 0, end: 2, name: "Nguyễn Huệ"), StreetSpan(start: 3, end: 5, name: "Hai Bà Trưng"),
+                         StreetSpan(start: 6, end: 12, name: "Lê Lợi")]
+        let nav = Navigator(route: r, destinationName: "Nhà")
+        let a = nav.update(pt(0, 20), at: Date(timeIntervalSince1970: 0), speedMps: 8).info
+        let b = nav.update(pt(0, 170), at: Date(timeIntervalSince1970: 10), speedMps: 8).info
+        XCTAssertEqual(a?.currentStreet, "Nguyễn Huệ")
+        XCTAssertEqual(b?.currentStreet, "Hai Bà Trưng", "đi thẳng qua đường khác: đổi tên dù chưa tới chỗ rẽ")
+    }
+
     func makeRoute() -> Route {
         var pts: [GeoPoint] = []
         for i in 0...6 { pts.append(pt(0, Double(i) * 50)) }      // 0..6, góc ở index 6

@@ -404,8 +404,9 @@ final class DashUITests: XCTestCase {
     func testBottomBarTexts() {
         let ui = DashUI()
         ui.homeBarText = "ODO 3.214 km"
+        XCTAssertEqual(ui.bottomBarText(now: 0), "ODO 3.214 km", "không chỉ đường: chữ mặc định của trang chủ")
         ui.nav = nav(distance: 300)
-        XCTAssertEqual(ui.bottomBarText(now: 0), "ODO 3.214 km")
+        XCTAssertEqual(ui.bottomBarText(now: 0), "Nguyễn Huệ", "đang chỉ đường: tên đường thay cho ODO")
         ui.nav = nav(distance: 60)
         XCTAssertEqual(ui.bottomBarText(now: 0), "Rẽ phải vào Lê Lợi", "dưới 100 m nhắc rẽ ở mọi trang trừ bản đồ")
         _ = press(ui, .down, times: 2, at: 1)

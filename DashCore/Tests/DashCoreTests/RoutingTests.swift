@@ -106,6 +106,15 @@ final class RoutingTests: XCTestCase {
         XCTAssertEqual(t.limits, [SpeedLimitSpan(start: 0, end: 3, kmh: 50), SpeedLimitSpan(start: 4, end: 6, kmh: 40)])
     }
 
+    func testParseTraceStreetNames() throws {
+        let o: [String: Any] = [
+            "edges": [["names": ["Nguyễn Huệ"], "length": 0.2], ["names": [], "length": 0.1], ["names": ["Lê Lợi", "QL1"], "length": 0.3]],
+            "matched_points": [["edge_index": 0], ["edge_index": 0], ["edge_index": 1], ["edge_index": 2], ["edge_index": 2]],
+        ]
+        let t = try Valhalla.parseTrace(json(o))
+        XCTAssertEqual(t.streets, [StreetSpan(start: 0, end: 1, name: "Nguyễn Huệ"), StreetSpan(start: 3, end: 4, name: "Lê Lợi")])
+    }
+
     func testParseTraceMatchedPoints() throws {
         let o: [String: Any] = [
             "edges": [["speed_limit": 50, "length": 0.2], ["speed_limit": 60, "length": 0.3]],

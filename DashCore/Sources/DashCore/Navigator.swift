@@ -111,9 +111,11 @@ public final class Navigator {
             etaS = (1 - w) * etaS + w * (remaining / v)
         }
         let limit = route.speedLimits.first(where: { $0.start <= idx && idx < $0.end })?.kmh
+        // Tên đường theo thực tế (đổi cả khi đi thẳng qua đường khác); thiếu dữ liệu thì dùng tên của bước chỉ đường
+        let realStreet = route.streetSpans.last(where: { $0.start <= idx && idx <= $0.end })?.name
 
         let info = NavInfo(maneuver: maneuver, distanceToTurnM: distTurn, nextStreet: nextStreet,
-                           currentStreet: cur?.street ?? "", destination: destinationName,
+                           currentStreet: realStreet ?? cur?.street ?? "", destination: destinationName,
                            remainingKm: remaining / 1000, eta: time.addingTimeInterval(etaS), speedLimit: limit)
         return NavUpdate(info: info, needsReroute: needsReroute, arrived: arrived, passedIndex: idx, offRouteM: best.dist)
     }

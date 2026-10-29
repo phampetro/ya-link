@@ -35,6 +35,7 @@ final class NavigationController: ObservableObject {
     var onStarted: ((NavInfo) -> Void)?
     var onChange: (() -> Void)?
     var onToast: ((String) -> Void)?
+    var onLog: ((String) -> Void)?
 
     private let ui: DashUI
     private let settings: AppSettings
@@ -204,6 +205,7 @@ final class NavigationController: ObservableObject {
     private func plan(from loc: CLLocation, to p: Pending, initial: Bool) async {
         let planner = RoutePlanner(googleKey: settings.activeGoogleKey)
         planner.onGoogleCall = { [weak settings] in Task { @MainActor in settings?.countGoogleCall() } }
+        planner.onDiag = { [weak self] text in Task { @MainActor in self?.onLog?(text) } }
         do {
             let r = try await planner.plan(from: GeoPoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude),
                                            to: p.point, via: [])

@@ -401,7 +401,9 @@ public final class DashUI {
         if let n = nav, n.distanceToTurnM < 100, !mapOpen { return n.maneuver.prompt(n.nextStreet) }
         switch page {
         case .music: return volumeMode ? "Âm lượng · +/- chỉnh" : "+/- đổi bài · 3×+ âm lượng · 3×- phát/dừng"
-        case .home: return homeBarText
+        case .home:
+            if let street = nav?.currentStreet, !street.isEmpty { return street }   // đang chỉ đường: tên đường thay cho ODO/Trip
+            return homeBarText
         case .map:
             if menu != nil { return "+/- lướt · đúp: chọn · Home thoát" }
             if now < noteUntil { return noteText }
