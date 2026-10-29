@@ -126,6 +126,10 @@ final class DashLink: NSObject, ObservableObject {
         location.start()
         ccu.onLog = { [weak self] line in self?.add("CCU: \(line)") }
         ccu.onMediaKey = { [weak self] key in self?.handleMediaKey(key) }
+        ccu.lastFix = { [weak self] in
+            guard let self = self, let c = self.location.location?.coordinate else { return nil }
+            return (c.latitude, c.longitude, self.location.placeName)
+        }
         ccu.start()
         callMonitor.onChange = { [weak self] state in self?.callChanged(state) }
         callMonitor.start()

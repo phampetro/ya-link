@@ -258,6 +258,44 @@ public enum CCUCommand {
     /// Trạng thái cuộc gọi (cmd 308): `01 34 [1]` đang trong cuộc gọi, `[2]` đã kết thúc.
     public static func callState(inCall: Bool) -> [UInt8] { [0x01, 0x34, inCall ? 1 : 2] }
 
+    /// THÍ NGHIỆM (đoán, chưa có trong tài liệu): khi cuộc gọi đang đổ chuông, báo cho xe mã 1 (cùng mã "đang trong cuộc gọi",
+    /// mã "có cuộc gọi" duy nhất được ghi trong tài liệu). Đặt false để chỉ ghi log, không gửi gì khi đổ chuông.
+    public static let sendCallPresentWhenRinging = true
+
+    /// Khu vực (cmd 4): `00 04 <seq>` + tên UTF-8 ≤ 21 byte, cắt ở ranh giới ký tự.
+    public static func area(seq: UInt8, name: String) -> [UInt8] {
+        [0x00, 0x04, seq] + utf8Cut(name, maxBytes: 21)
+    }
+
+    /// Nhiệt độ ×10 làm tròn, i16 BE (31,5 °C → `01 3B`).
+    public static func tempTenths(_ celsius: Double) -> [UInt8] {
+        let v = Int16(clamping: Int((celsius * 10).rounded()))
+        let u = UInt16(bitPattern: v)
+        return [UInt8(u >> 8), UInt8(u & 0xFF)]
+    }
+
+    /// Ô dự báo (cmd 5): `00 05 <seq> <ô> <icon> <temp i16 BE> <max i16 BE> <min i16 BE> <mưa ÷ 5>`.
+    /// Nhiệt độ truyền vào là °C (nhân 10 ở đây); mưa 0–100 % → 0–20.
+    public static func forecast(seq: UInt8, slot: UInt8, icon: UInt8, tempC: Double, maxC: Double, minC: Double,
+                                precipPercent: Int) -> [UInt8] {
+        [0x00, 0x05, seq, slot, icon] + tempTenths(tempC) + tempTenths(maxC) + tempTenths(minC)
+            + [UInt8(min(max(precipPercent, 0), 100) / 5)]
+    }
+
+    /// Toạ độ trong yêu cầu thời tiết của xe (cmd 3, ≥ 11 byte, byte 2 = 0): vĩ độ ở byte 3–6, kinh độ ở byte 7–10,
+    /// int32 BE radian × 10⁸. Trả (độ, độ); nil nếu không phải yêu cầu đó. Số ngoài miền hợp lệ
+    /// (|vĩ độ| > 90, |kinh độ| > 180, hoặc cả hai bằng 0) trả về `valid == false` để app dùng vị trí cuối.
+    public static func weatherRequest(_ b: [UInt8]) -> (latitude: Double, longitude: Double, valid: Bool)? {
+        guard b.count >= 11, b[0] == 0x00, b[1] == 0x03, b[2] == 0 else { return nil }
+        func i32(_ o: Int) -> Int32 {
+            Int32(bitPattern: UInt32(b[o]) << 24 | UInt32(b[o + 1]) << 16 | UInt32(b[o + 2]) << 8 | UInt32(b[o + 3]))
+        }
+        let lat = Double(i32(3)) / 1e8 * 180 / Double.pi
+        let lon = Double(i32(7)) / 1e8 * 180 / Double.pi
+        let ok = abs(lat) <= 90 && abs(lon) <= 180 && !(lat == 0 && lon == 0)
+        return (lat, lon, ok)
+    }
+
     public static let languageVietnamese: UInt8 = 15
     public static let languageEnglish: UInt8 = 0
 
@@ -306,6 +344,8 @@ public enum CCUMessage: Equatable {
     case callKey(UInt8)
     /// 285 `01 1D <k>`: âm lượng / tắt tiếng (1/2 media ±, 3/4 cuộc gọi ±, 5 tắt media, 6 tắt mic).
     case volumeKey(UInt8)
+    /// 3 `00 03 00` + vĩ độ, kinh độ (int32 BE radian × 10⁸): xe hỏi thời tiết. `valid` false = toạ độ vô lý.
+    case askWeather(latitude: Double, longitude: Double, valid: Bool)
     case other(cmd: UInt16, bytes: [UInt8])
 
     public init?(_ b: [UInt8]) {
@@ -322,6 +362,9 @@ public enum CCUMessage: Equatable {
         case 279 where b.count >= 3: self = .mediaKey(b[2])
         case 281 where b.count >= 3: self = .callKey(b[2])
         case 285 where b.count >= 3: self = .volumeKey(b[2])
+        case 3 where CCUCommand.weatherRequest(b) != nil:
+            let w = CCUCommand.weatherRequest(b)!
+            self = .askWeather(latitude: w.latitude, longitude: w.longitude, valid: w.valid)
         default: self = .other(cmd: cmd, bytes: b)
         }
     }

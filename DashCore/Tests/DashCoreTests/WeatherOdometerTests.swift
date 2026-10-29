@@ -119,4 +119,95 @@ final class WeatherOdometerTests: XCTestCase {
         let back = try JSONDecoder().decode(OdometerBook.self, from: JSONEncoder().encode(b))
         XCTAssertEqual(back, b)
     }
+
+    // MARK: - Mưa thực đo, dự báo cho xe
+
+    func testRainOverridesDryModelCode() throws {
+        let json = #"{"current":{"temperature_2m":28.0,"weather_code":3,"is_day":1,"precipitation":0.4}}"#
+        let w = try Weather.parse(Data(json.utf8), place: "")
+        XCTAssertEqual(w.kind, .rain)
+        XCTAssertEqual(w.label, "Mưa")
+        // dưới ngưỡng 0,2 mm: giữ nguyên
+        let dry = #"{"current":{"temperature_2m":28.0,"weather_code":3,"is_day":1,"precipitation":0.1}}"#
+        XCTAssertEqual(try Weather.parse(Data(dry.utf8), place: "").label, "Nhiều mây")
+        // mã đã là mưa thì không đổi
+        let rain = #"{"current":{"temperature_2m":28.0,"weather_code":80,"is_day":1,"precipitation":2.0}}"#
+        XCTAssertEqual(try Weather.parse(Data(rain.utf8), place: "").label, "Mưa rào")
+        XCTAssertEqual(Weather.effectiveCode(45, precipitationMm: 0.2), 61)
+        XCTAssertEqual(Weather.effectiveCode(71, precipitationMm: 5), 71)
+        XCTAssertTrue(try XCTUnwrap(Weather.url(lat: 1, lon: 2)).absoluteString.contains("precipitation"))
+    }
+
+    func testBikeIconTable() {
+        XCTAssertEqual(Weather.bikeIcon(code: 0, isDay: true), 0)
+        XCTAssertEqual(Weather.bikeIcon(code: 0, isDay: false), 128)
+        XCTAssertEqual(Weather.bikeIcon(code: 2, isDay: true), 1)
+        XCTAssertEqual(Weather.bikeIcon(code: 1, isDay: false), 129)
+        XCTAssertEqual(Weather.bikeIcon(code: 3, isDay: true), 2)
+        XCTAssertEqual(Weather.bikeIcon(code: 3, isDay: false), 130)
+        XCTAssertEqual(Weather.bikeIcon(code: 48, isDay: false), 8)
+        for c in [51, 53, 55, 61] { XCTAssertEqual(Weather.bikeIcon(code: c, isDay: true), 16) }
+        XCTAssertEqual(Weather.bikeIcon(code: 57, isDay: true), 20)
+        XCTAssertEqual(Weather.bikeIcon(code: 63, isDay: true), 3)
+        XCTAssertEqual(Weather.bikeIcon(code: 65, isDay: true), 17)
+        XCTAssertEqual(Weather.bikeIcon(code: 82, isDay: false), 17)
+        XCTAssertEqual(Weather.bikeIcon(code: 67, isDay: true), 7)
+        XCTAssertEqual(Weather.bikeIcon(code: 81, isDay: true), 13)
+        XCTAssertEqual(Weather.bikeIcon(code: 80, isDay: false), 141)
+        XCTAssertEqual(Weather.bikeIcon(code: 95, isDay: true), 14)
+        XCTAssertEqual(Weather.bikeIcon(code: 95, isDay: false), 142)
+        XCTAssertEqual(Weather.bikeIcon(code: 96, isDay: false), 12)
+        XCTAssertEqual(Weather.bikeIcon(code: 99, isDay: true), 12)
+        XCTAssertEqual(Weather.bikeIcon(code: 62, isDay: true), 15)     // "anything else"
+        XCTAssertTrue([4, 18, 19].contains(Weather.bikeIcon(code: 73, isDay: true)))
+    }
+
+    private var forecastJSON: String {
+        """
+        {"current":{"time":"2026-10-28T14:10","temperature_2m":31.5,"weather_code":2,"is_day":1,"precipitation":0.0},
+         "hourly":{"time":["2026-10-28T13:00","2026-10-28T14:00","2026-10-28T15:00","2026-10-28T16:00","2026-10-28T17:00","2026-10-28T18:00"],
+           "temperature_2m":[30.0,31.0,32.4,31.1,29.0,27.0],
+           "weather_code":[1,2,3,61,80,0],
+           "precipitation_probability":[0,10,20,45,70,5]},
+         "daily":{"time":["d0","d1","d2","d3","d4","d5","d6"],
+           "weather_code":[2,3,63,95,0,45,65],
+           "temperature_2m_max":[33.0,34.0,30.0,31.0,35.0,32.0,29.0],
+           "temperature_2m_min":[26.0,25.0,24.0,25.0,26.0,27.0,23.0],
+           "precipitation_probability_max":[40,60,90,80,0,15,100]}}
+        """
+    }
+
+    func testParseForecast() throws {
+        let f = try Weather.parseForecast(Data(forecastJSON.utf8))
+        XCTAssertEqual(f.now, Weather.Point(code: 2, isDay: true, tempC: 31.5, maxC: 33, minC: 26, precipPercent: 40))
+        XCTAssertEqual(f.hours.map { $0.tempC }, [32.4, 31.1, 29.0])          // 15, 16, 17 giờ
+        XCTAssertEqual(f.hours.map { $0.code }, [3, 61, 80])
+        XCTAssertEqual(f.hours.map { $0.precipPercent }, [20, 45, 70])
+        XCTAssertEqual(f.hours[0].maxC, 0)
+        XCTAssertEqual(f.days.count, 6)
+        XCTAssertEqual(f.days[0], Weather.Point(code: 3, isDay: true, tempC: 29.5, maxC: 34, minC: 25, precipPercent: 60))
+        XCTAssertEqual(f.days[5].code, 65)
+        XCTAssertThrowsError(try Weather.parseForecast(Data("{}".utf8)))
+    }
+
+    func testForecastFramesSlots() throws {
+        let f = try Weather.parseForecast(Data(forecastJSON.utf8))
+        var n: UInt8 = 0
+        let frames = Weather.forecastFrames(f, seq: { n += 1; return n })
+        XCTAssertEqual(frames.count, 10)
+        XCTAssertEqual(frames.map { $0[3] }, [0, 1, 2, 3, 4, 5, 9, 6, 7, 8])   // số ô
+        XCTAssertEqual(frames.map { $0[2] }, Array(1...10))                    // seq tươi, tăng dần
+        XCTAssertEqual(frames[0], [0x00, 0x05, 1, 0, 1, 0x01, 0x3B, 0x01, 0x4A, 0x01, 0x04, 8])   // 31,5 → 01 3B, ít mây ngày = 1
+        XCTAssertEqual(frames[1], [0x00, 0x05, 2, 1, 2, 0x01, 0x27, 0x01, 0x54, 0x00, 0xFA, 12])  // 29,5 / 34 / 25, mưa 60 % → 12
+        XCTAssertEqual(frames[7], [0x00, 0x05, 8, 6, 2, 0x01, 0x44, 0, 0, 0, 0, 4])              // 32,4 → 324 = 01 44, mưa 20 % → 4
+    }
+
+    func testForecastURL() throws {
+        let s = try XCTUnwrap(Weather.forecastURL(lat: 10.7769, lon: 106.7009)).absoluteString
+        XCTAssertTrue(s.contains("forecast_days=7"))
+        XCTAssertTrue(s.contains("timezone=auto"))
+        XCTAssertTrue(s.contains("hourly=temperature_2m,weather_code,precipitation_probability"))
+        XCTAssertTrue(s.contains("daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"))
+        XCTAssertTrue(s.contains("current=temperature_2m,weather_code,is_day,precipitation"))
+    }
 }

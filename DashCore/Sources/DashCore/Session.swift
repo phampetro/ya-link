@@ -134,6 +134,9 @@ public final class LinkASession {
                 rtt = Int((now - f.sentAt) * 1000)
                 inFlight = nil
             }
+            // Sau mỗi ACK đo được thời gian gửi→ACK: báo độ trễ cho đồng hồ (lệnh 16, documented — not yet observed).
+            // Không có khung nào đang chờ thì không có gì để đo, không gửi.
+            if let ms = rtt { r.send = [PhoneCommand.latency(milliseconds: ms)] }
             r.events = [.ack(id: id, roundTripMs: rtt)]
 
         default:

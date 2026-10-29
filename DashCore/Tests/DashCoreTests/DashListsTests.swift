@@ -140,4 +140,36 @@ final class DashListsTests: XCTestCase {
         XCTAssertTrue(show.contains(PhoneCommand.homeSaved(true)))
         XCTAssertTrue(show.contains(PhoneCommand.workSaved(true)))
     }
+
+    // MARK: - Báo độ trễ (16) sau ACK
+
+    func testAckWithMeasuredRttSendsLatency() {
+        let s = LinkASession()
+        _ = s.receive(bike(55, [1, 0]), now: 0)
+        XCTAssertNotNil(s.makeMapFrame(jpeg: [0xFF, 0xD8], now: 10))
+        XCTAssertFalse(s.canSendFrame)                       // một khung chờ ACK
+        let r = s.receive(bike(80, [1, 0]), now: 10.45)      // rtt 450 ms → 4
+        XCTAssertEqual(r.events, [.ack(id: 1, roundTripMs: 450)])
+        XCTAssertEqual(r.send, [PhoneCommand.latency(milliseconds: 450)])
+        XCTAssertEqual(r.send.first?.payload, [4, 0])
+        XCTAssertEqual(r.send.first?.command, 16)
+        XCTAssertTrue(s.canSendFrame)                        // ACK mở đường cho khung kế
+    }
+
+    func testLatencyIsCappedAt255() {
+        let s = LinkASession()
+        _ = s.receive(bike(55, [1, 0]), now: 0)
+        s.ackTimeout = 1000
+        XCTAssertNotNil(s.makeMapFrame(jpeg: [0xFF, 0xD8], now: 0))
+        let r = s.receive(bike(80, [1, 0]), now: 100)        // 100 000 ms
+        XCTAssertEqual(r.send.first?.payload, [255, 0])
+    }
+
+    func testAckWithNothingInFlightSendsNoLatency() {
+        let s = LinkASession()
+        _ = s.receive(bike(55, [1, 0]), now: 0)
+        let r = s.receive(bike(80, [1, 0]), now: 5)
+        XCTAssertEqual(r.events, [.ack(id: 1, roundTripMs: nil)])
+        XCTAssertEqual(r.send, [])
+    }
 }

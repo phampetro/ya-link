@@ -1,4 +1,5 @@
 import CoreBluetooth
+import CoreLocation
 import DashCore
 import ExternalAccessory
 import Foundation
@@ -65,6 +66,15 @@ final class CCULink: NSObject, ObservableObject {
     private var musicInfo: MusicInfo?
     private var lastTrackKey: String?
     private var callState: DashUI.CallState = .none
+    /// Đã gửi 308 = 1 cho cuộc gọi hiện tại chưa (để khi nghe máy không gửi lại).
+    private var sentCallPresent = false
+
+    // Thời tiết cho xe (cmd 3 → 4 + 10 × 5)
+    /// App cung cấp vị trí cuối đã biết + tên khu vực (đã rút gọn, có thể rỗng).
+    var lastFix: (() -> (lat: Double, lon: Double, place: String)?)?
+    static let forecastCacheSeconds: TimeInterval = 600
+    private var forecastCache: (lat: Double, lon: Double, at: Date, forecast: Weather.Forecast)?
+    private var weatherTask: Task<Void, Never>?
     /// Chỉ gửi trạng thái điện thoại nhiều nhất mỗi 2 s.
     static let phoneStatusMinGap: TimeInterval = 2
 
@@ -288,14 +298,27 @@ final class CCULink: NSObject, ObservableObject {
     private func sendCallState(_ state: DashUI.CallState, previous: DashUI.CallState) {
         switch state {
         case .ringing:
-            log("B: có cuộc gọi đến, chưa gửi cho xe (tài liệu không có mã đổ chuông)")
+            // THÍ NGHIỆM: tài liệu không có mã đổ chuông. Đoán mã 1 (đổi ở CCUCommand.sendCallPresentWhenRinging).
+            if CCUCommand.sendCallPresentWhenRinging {
+                log("B: đang đổ chuông: gửi mã 1 (đoán, chưa có trong tài liệu)")
+                writeCmd(CCUCommand.callState(inCall: true), label: "cuộc gọi đổ chuông 308 = 1 (đoán)")
+                sentCallPresent = true
+            } else {
+                log("B: có cuộc gọi đến, chưa gửi cho xe (tài liệu không có mã đổ chuông)")
+            }
         case .active:
-            log("B: đang trong cuộc gọi, gửi cho xe (308 = 1)")
-            writeCmd(CCUCommand.callState(inCall: true), label: "cuộc gọi 308 = 1")
+            if sentCallPresent {
+                log("B: đã nghe máy, xe đã được báo mã 1 cho cuộc gọi này, không gửi lại")
+            } else {
+                log("B: đang trong cuộc gọi, gửi cho xe (308 = 1)")
+                writeCmd(CCUCommand.callState(inCall: true), label: "cuộc gọi 308 = 1")
+                sentCallPresent = true
+            }
         case .none:
             if previous == .none { return }
-            log("B: cuộc gọi đã kết thúc, gửi cho xe (308 = 2)")
+            log("B: cuộc gọi đã kết thúc\(previous == .ringing ? " (nhỡ / từ chối)" : ""), gửi cho xe (308 = 2)")
             writeCmd(CCUCommand.callState(inCall: false), label: "cuộc gọi 308 = 2")
+            sentCallPresent = false
         }
     }
 
@@ -305,7 +328,8 @@ final class CCULink: NSObject, ObservableObject {
         sendLanguage("sau xác thực")
         sendPhoneStatus(PhoneStatusProbe.read(), why: "sau xác thực")
         sendTrackInfo()
-        if callState == .active { sendCallState(.active, previous: .none) }
+        sentCallPresent = false
+        if callState != .none { sendCallState(callState, previous: .none) }
     }
 
     private func mediaKeyName(_ k: UInt8) -> String {
@@ -822,9 +846,85 @@ final class CCULink: NSObject, ObservableObject {
         case .volumeKey(let k):
             log("B: xe bấm phím âm lượng (cmd 285): mã \(k), gửi lại trạng thái điện thoại")
             sendPhoneStatus(PhoneStatusProbe.read(), why: "xe bấm âm lượng")
+        case .askWeather(let lat, let lon, let valid):
+            handleWeatherRequest(latitude: lat, longitude: lon, valid: valid, raw: bytes)
         case .other(let cmd, let raw):
             log("B: lệnh lạ từ xe: cmd \(cmd) [\(hx(raw))]")
         }
+    }
+
+    // MARK: - Thời tiết cho xe
+
+    /// Xe hỏi thời tiết (cmd 3): lấy dự báo (cache 10 phút) rồi gửi cmd 4 (tên khu vực) và mười cmd 5. Không chặn vòng poll.
+    private func handleWeatherRequest(latitude: Double, longitude: Double, valid: Bool, raw: [UInt8]) {
+        var lat = latitude, lon = longitude
+        let fix = lastFix?()
+        if valid {
+            log("B: xe hỏi thời tiết (cmd 3): toạ độ \(String(format: "%.4f, %.4f", lat, lon)) [\(hx(raw))]")
+        } else if let f = fix {
+            log("B: xe hỏi thời tiết (cmd 3) nhưng toạ độ vô lý (\(String(format: "%.4f, %.4f", lat, lon))), dùng vị trí cuối đã biết \(String(format: "%.4f, %.4f", f.lat, f.lon))")
+            lat = f.lat
+            lon = f.lon
+        } else {
+            log("B: xe hỏi thời tiết (cmd 3) nhưng toạ độ vô lý và app chưa có vị trí, bỏ qua")
+            return
+        }
+        // Tên từ app chỉ đúng khi toạ độ gần vị trí của app (≤ 3 km)
+        var place = ""
+        if let f = fix, !f.place.isEmpty,
+           CLLocation(latitude: f.lat, longitude: f.lon).distance(from: CLLocation(latitude: lat, longitude: lon)) <= 3000 {
+            place = f.place
+        }
+        let lt = lat, ln = lon, knownPlace = place
+        weatherTask?.cancel()
+        weatherTask = Task { [weak self] in
+            await self?.answerWeather(lat: lt, lon: ln, knownPlace: knownPlace)
+        }
+    }
+
+    private func answerWeather(lat: Double, lon: Double, knownPlace: String) async {
+        let forecast: Weather.Forecast
+        if let c = forecastCache, Date().timeIntervalSince(c.at) < Self.forecastCacheSeconds,
+           abs(c.lat - lat) < 0.05, abs(c.lon - lon) < 0.05 {
+            forecast = c.forecast
+            log("B: dự báo lấy từ bộ nhớ đệm (dưới 10 phút), không gọi mạng")
+        } else {
+            do {
+                forecast = try await fetchForecast(lat: lat, lon: lon)
+            } catch {
+                log("B: lấy dự báo Open-Meteo lỗi: \(error.localizedDescription), không trả lời xe")
+                return
+            }
+            forecastCache = (lat, lon, Date(), forecast)
+        }
+        if Task.isCancelled { return }
+        var place = knownPlace
+        if place.isEmpty {
+            place = await reverseGeocodedName(lat: lat, lon: lon)
+        }
+        sendWeather(forecast, place: place)
+    }
+
+    private func reverseGeocodedName(lat: Double, lon: Double) async -> String {
+        let loc = CLLocation(latitude: lat, longitude: lon)
+        guard let marks = try? await CLGeocoder().reverseGeocodeLocation(loc, preferredLocale: Locale(identifier: "vi_VN")),
+              let mark = marks.first else { return "" }
+        let sub = mark.subLocality ?? mark.subAdministrativeArea
+        let city = mark.locality ?? mark.administrativeArea
+        return PlaceNames.short(sub: sub, city: city)
+    }
+
+    private func sendWeather(_ f: Weather.Forecast, place: String) {
+        let area = CCUCommand.area(seq: nextSeq(), name: place)
+        writeCmd(area, label: "khu vực 4 \"\(place)\"")
+        let frames = Weather.forecastFrames(f, seq: { self.nextSeq() })
+        for fr in frames {
+            writeCmd(fr, label: "dự báo 5 ô \(fr[3])", quiet: true)
+        }
+        let hours = f.hours.map { "\(Int($0.tempC.rounded()))°" }.joined(separator: "/")
+        log("B: đã gửi thời tiết cho xe: khu vực \"\(place)\" (\(area.count - 3) B), \(frames.count) ô dự báo; "
+            + "bây giờ \(String(format: "%.1f", f.now.tempC)) °C mã WMO \(f.now.code) (icon \(Weather.bikeIcon(code: f.now.code, isDay: f.now.isDay))), "
+            + "\(f.days.count) ngày, giờ kế \(hours.isEmpty ? "—" : hours)")
     }
 
     private func handlePacket(_ packet: [UInt8], via: String) {

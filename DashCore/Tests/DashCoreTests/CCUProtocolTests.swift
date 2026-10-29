@@ -359,4 +359,57 @@ final class CCUProtocolTests: XCTestCase {
         XCTAssertEqual(f.update(counter: 5), 0.6, accuracy: 1e-9)           // bộ đếm lùi: bỏ
         XCTAssertEqual(f.update(counter: 10_005), 0.7, accuracy: 1e-9)
     }
+
+    // MARK: - Thời tiết cho xe (cmd 3 / 4 / 5)
+
+    func testAreaBytesAndCut() {
+        XCTAssertEqual(CCUCommand.area(seq: 5, name: "Q.1"), [0x00, 0x04, 0x05, 0x51, 0x2E, 0x31])
+        XCTAssertEqual(CCUCommand.area(seq: 1, name: ""), [0x00, 0x04, 0x01])
+        // "Đ" = 2 byte; 11 ký tự = 22 byte > 21: cắt còn 10 ký tự (20 byte), không chẻ đôi ký tự
+        let b = CCUCommand.area(seq: 1, name: String(repeating: "Đ", count: 11))
+        XCTAssertEqual(b.count, 3 + 20)
+        XCTAssertNotNil(String(bytes: Array(b[3...]), encoding: .utf8))
+    }
+
+    func testForecastBytesDocExample() {
+        // 31,5 °C → 01 3B; max 33 → 01 4A; min 26 → 01 04; mưa 40 % → 8
+        XCTAssertEqual(CCUCommand.forecast(seq: 7, slot: 0, icon: 0, tempC: 31.5, maxC: 33, minC: 26, precipPercent: 40),
+                       [0x00, 0x05, 0x07, 0x00, 0x00, 0x01, 0x3B, 0x01, 0x4A, 0x01, 0x04, 0x08])
+        // ô giờ: max = min = 0; mưa 100 % → 20; nhiệt độ âm -2,5 °C → -25 = FF E7
+        XCTAssertEqual(CCUCommand.forecast(seq: 8, slot: 6, icon: 129, tempC: -2.5, maxC: 0, minC: 0, precipPercent: 100),
+                       [0x00, 0x05, 0x08, 0x06, 0x81, 0xFF, 0xE7, 0x00, 0x00, 0x00, 0x00, 0x14])
+        XCTAssertEqual(CCUCommand.forecast(seq: 9, slot: 9, icon: 2, tempC: 0, maxC: 0, minC: 0, precipPercent: 4).last, 0)
+    }
+
+    func testWeatherRequestParse() throws {
+        // vĩ độ 0,18808 rad = 18 808 000 = 0x011EFCC0; kinh độ 1,86 rad = 186 000 000 = 0x0B162280
+        let b: [UInt8] = [0x00, 0x03, 0x00, 0x01, 0x1E, 0xFC, 0xC0, 0x0B, 0x16, 0x22, 0x80]
+        let w = try XCTUnwrap(CCUCommand.weatherRequest(b))
+        XCTAssertEqual(w.latitude, 10.7762, accuracy: 1e-3)
+        XCTAssertEqual(w.longitude, 106.5703, accuracy: 1e-3)
+        XCTAssertTrue(w.valid)
+        guard case .askWeather(let la, let lo, let ok)? = CCUMessage(b) else { return XCTFail("không ra .askWeather") }
+        XCTAssertEqual(la, w.latitude)
+        XCTAssertEqual(lo, w.longitude)
+        XCTAssertTrue(ok)
+        // vĩ độ âm: -1 000 000 = FF F0 BD C0
+        let neg = try XCTUnwrap(CCUCommand.weatherRequest([0x00, 0x03, 0x00, 0xFF, 0xF0, 0xBD, 0xC0, 0x0B, 0x16, 0x22, 0x80]))
+        XCTAssertEqual(neg.latitude, -0.01 * 180 / Double.pi, accuracy: 1e-6)
+        // ngoài miền (2 rad = 114,6°) và 0,0 là không hợp lệ
+        let tooBig = try XCTUnwrap(CCUCommand.weatherRequest([0x00, 0x03, 0x00, 0x0B, 0xEB, 0xC2, 0x00, 0x0B, 0x16, 0x22, 0x80]))
+        XCTAssertFalse(tooBig.valid)
+        let zero = try XCTUnwrap(CCUCommand.weatherRequest([0x00, 0x03, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]))
+        XCTAssertFalse(zero.valid)
+    }
+
+    func testWeatherRequestNeedsElevenBytesAndZeroByte2() {
+        XCTAssertNil(CCUCommand.weatherRequest([0x00, 0x03, 0x00, 0x01, 0x1E, 0xFC, 0xC0, 0x0B, 0x16, 0x22]))   // 10 byte
+        XCTAssertNil(CCUCommand.weatherRequest([0x00, 0x03, 0x01, 0x01, 0x1E, 0xFC, 0xC0, 0x0B, 0x16, 0x22, 0x80]))
+        XCTAssertEqual(CCUMessage([0x00, 0x03, 0x00]), .other(cmd: 3, bytes: [0x00, 0x03, 0x00]))
+    }
+
+    func testRingingGuessConstantKeepsBuilderSemantics() {
+        XCTAssertTrue(CCUCommand.sendCallPresentWhenRinging)
+        XCTAssertEqual(CCUCommand.callState(inCall: true), [0x01, 0x34, 0x01])
+    }
 }
