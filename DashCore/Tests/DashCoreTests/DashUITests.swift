@@ -437,7 +437,7 @@ final class DashUITests: XCTestCase {
         XCTAssertEqual(ui.bottomBarText(now: 2), "+/- thu phóng · 3 lần: menu", "bản đồ: không nhắc rẽ")
         XCTAssertEqual(ui.bottomBarText(now: 6), "Nguyễn Huệ")
         _ = press(ui, .up, at: 7)
-        XCTAssertEqual(ui.bottomBarText(now: 8), "Thu phóng · 250 m")
+        XCTAssertEqual(ui.bottomBarText(now: 8), "Thu phóng · 400 m")
     }
 
     func testMapWithoutNavigationAsksToShare() {
