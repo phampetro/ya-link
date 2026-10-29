@@ -148,10 +148,10 @@ final class DashListsTests: XCTestCase {
         _ = s.receive(bike(55, [1, 0]), now: 0)
         XCTAssertNotNil(s.makeMapFrame(jpeg: [0xFF, 0xD8], now: 10))
         XCTAssertFalse(s.canSendFrame)                       // một khung chờ ACK
-        let r = s.receive(bike(80, [1, 0]), now: 10.45)      // rtt 450 ms → 4
-        XCTAssertEqual(r.events, [.ack(id: 1, roundTripMs: 450)])
-        XCTAssertEqual(r.send, [PhoneCommand.latency(milliseconds: 450)])
-        XCTAssertEqual(r.send.first?.payload, [4, 0])
+        let r = s.receive(bike(80, [1, 0]), now: 10.5)       // rtt 500 ms → 5 (số nhị phân chính xác, tránh sai số làm tròn)
+        XCTAssertEqual(r.events, [.ack(id: 1, roundTripMs: 500)])
+        XCTAssertEqual(r.send, [PhoneCommand.latency(milliseconds: 500)])
+        XCTAssertEqual(r.send.first?.payload, [5, 0])
         XCTAssertEqual(r.send.first?.command, 16)
         XCTAssertTrue(s.canSendFrame)                        // ACK mở đường cho khung kế
     }
