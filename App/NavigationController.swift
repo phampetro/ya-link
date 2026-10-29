@@ -10,9 +10,24 @@ import MapKit
 /// và `navigate(to:)` đi thẳng tới địa điểm đã lưu (từ menu giữ Enter trên đồng hồ).
 @MainActor
 final class NavigationController: ObservableObject {
+    /// Một kết quả tìm kiếm MapKit cho link chỉ có địa chỉ.
+    struct Candidate: Equatable {
+        var name: String
+        var address: String
+        var point: GeoPoint
+        /// Khoảng cách từ vị trí GPS gần nhất (m), nil khi chưa có vị trí.
+        var distanceM: Double?
+    }
+
     struct Pending: Equatable {
+        /// Toạ độ đến từ đâu: ghim trong link, khung nhìn bản đồ, hoặc tìm theo tên.
+        enum Source: Equatable { case pin, viewport, search }
+
         var name: String
         var point: GeoPoint
+        var source: Source = .pin
+        var alternatives: [Candidate] = []
+        var selected: Int = 0
     }
 
     enum State: Equatable {
@@ -84,16 +99,33 @@ final class NavigationController: ObservableObject {
                 state = .failed("Không đọc được địa điểm từ nội dung chia sẻ.")
                 return
             }
-            var point = dest.point
-            if point == nil, let q = dest.searchText ?? dest.name {
-                point = await search(q)
-            }
-            guard let p = point else {
-                state = .failed("Không tìm thấy toạ độ cho “\(dest.searchText ?? dest.name ?? "địa điểm")”.")
+            if let p = dest.point {
+                state = .confirm(Pending(name: dest.name ?? dest.searchText ?? "Điểm đến", point: p,
+                                         source: dest.coordinateSource == .viewport ? .viewport : .pin))
                 return
             }
-            state = .confirm(Pending(name: dest.name ?? dest.searchText ?? "Điểm đến", point: p))
+            let query = dest.searchText ?? dest.name ?? ""
+            let found = await searchCandidates(ShareLink.searchQueries(for: query))
+            guard let first = found.first else {
+                onLog?("link chỉ có địa chỉ: MapKit không có kết quả")
+                state = .failed("Không tìm thấy địa điểm từ địa chỉ trong link.")
+                return
+            }
+            onLog?("link chỉ có địa chỉ: \(found.count) kết quả MapKit, chọn: \(first.name)")
+            state = .confirm(Pending(name: first.name, point: first.point, source: .search,
+                                     alternatives: found, selected: 0))
         }
+    }
+
+    /// Chọn một kết quả trong danh sách ở màn xác nhận (đổi tên và toạ độ đang chờ).
+    func selectAlternative(_ index: Int) {
+        guard case .confirm(var p) = state, p.alternatives.indices.contains(index) else { return }
+        let c = p.alternatives[index]
+        p.selected = index
+        p.name = c.name
+        p.point = c.point
+        state = .confirm(p)
+        onLog?("đổi lựa chọn: \(c.name) (#\(index + 1))")
     }
 
     /// Luồng thêm địa điểm: dán link → đọc → màn xác nhận ở chế độ "Lưu địa điểm này?".
@@ -102,15 +134,35 @@ final class NavigationController: ObservableObject {
         handleShared(text: text)
     }
 
-    /// Tìm tên địa điểm bằng MapKit (chỉ lấy kết quả đầu, người dùng xác nhận lại ở màn xác nhận).
-    private func search(_ text: String) async -> GeoPoint? {
-        let req = MKLocalSearch.Request()
-        req.naturalLanguageQuery = text
-        if let l = lastFix {
-            req.region = MKCoordinateRegion(center: l.coordinate, latitudinalMeters: 50_000, longitudinalMeters: 50_000)
+    /// Tìm bằng MapKit lần lượt từng truy vấn (cụ thể trước). Dừng khi đã có kết quả (nếu mới có 1 thì thử thêm
+    /// truy vấn đơn giản hơn để có phương án thay thế). Gộp, bỏ trùng toạ độ trong 30 m, tối đa 5, giữ thứ tự MapKit.
+    private func searchCandidates(_ queries: [String]) async -> [Candidate] {
+        var out: [Candidate] = []
+        for q in queries {
+            let req = MKLocalSearch.Request()
+            req.naturalLanguageQuery = q
+            if let l = lastFix {
+                req.region = MKCoordinateRegion(center: l.coordinate, latitudinalMeters: 60_000, longitudinalMeters: 60_000)
+            }
+            guard let items = try? await MKLocalSearch(request: req).start().mapItems else { continue }
+            for item in items {
+                let c = item.placemark.coordinate
+                guard CLLocationCoordinate2DIsValid(c) else { continue }
+                let loc = CLLocation(latitude: c.latitude, longitude: c.longitude)
+                if out.contains(where: { CLLocation(latitude: $0.point.lat, longitude: $0.point.lon).distance(from: loc) < 30 }) { continue }
+                let pm = item.placemark
+                let street = [pm.subThoroughfare, pm.thoroughfare].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+                let joined = [street, pm.subLocality ?? "", pm.locality ?? ""].filter { !$0.isEmpty }.joined(separator: ", ")
+                let address = joined.isEmpty ? (pm.title ?? "") : joined
+                let itemName = item.name ?? ""
+                let name = itemName.isEmpty ? (address.isEmpty ? q : address) : itemName
+                out.append(Candidate(name: name, address: address, point: GeoPoint(lat: c.latitude, lon: c.longitude),
+                                     distanceM: lastFix.map { $0.distance(from: loc) }))
+                if out.count >= 5 { return out }
+            }
+            if out.count >= 2 { break }
         }
-        guard let item = try? await MKLocalSearch(request: req).start().mapItems.first else { return nil }
-        return GeoPoint(lat: item.placemark.coordinate.latitude, lon: item.placemark.coordinate.longitude)
+        return out
     }
 
     func cancelPending() {

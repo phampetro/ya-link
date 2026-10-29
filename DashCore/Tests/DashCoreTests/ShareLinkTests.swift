@@ -84,4 +84,41 @@ final class ShareLinkTests: XCTestCase {
         XCTAssertTrue(ShareLink.isShortLink(URL(string: "https://goo.gl/maps/xyz")!))
         XCTAssertFalse(ShareLink.isShortLink(URL(string: "https://goo.gl/other")!))
     }
+
+    // MARK: - Link chỉ có địa chỉ
+
+    private let viettelLink = "https://maps.google.com?q=T%C3%B2a%20nh%C3%A0%20Viettel%20Complex,%20H%E1%BA%BBm%20285%20C%C3%A1ch%20M%E1%BA%A1ng%20Th%C3%A1ng%20T%C3%A1m,%20H%C3%B2a%20H%C6%B0ng,%20H%E1%BB%93%20Ch%C3%AD%20Minh&ftid=0x31752f26375ef4b7:0xfb2cc0be2b2b6a8d&entry=gps&g_st=ic"
+
+    func testTextOnlyLinkHasNoCoordinates() throws {
+        let url = try XCTUnwrap(URL(string: viettelLink))
+        let dest = try XCTUnwrap(ShareLink.parse(url: url, sharedText: nil))
+        XCTAssertNil(dest.point)
+        XCTAssertEqual(dest.searchText, "Tòa nhà Viettel Complex, Hẻm 285 Cách Mạng Tháng Tám, Hòa Hưng, Hồ Chí Minh")
+    }
+
+    func testSearchQueriesForViettelAddress() {
+        let text = "Tòa nhà Viettel Complex, Hẻm 285 Cách Mạng Tháng Tám, Hòa Hưng, Hồ Chí Minh"
+        let qs = ShareLink.searchQueries(for: text)
+        XCTAssertEqual(qs.first, text)
+        XCTAssertLessThanOrEqual(qs.count, 4)
+        XCTAssertEqual(Set(qs).count, qs.count)
+        XCTAssertTrue(qs.contains { $0.contains("Viettel Complex") && $0.contains("Cách Mạng Tháng Tám") && !$0.contains("Hẻm") })
+        XCTAssertTrue(qs.contains { !$0.contains("Hồ Chí Minh") && $0.contains("Hòa Hưng") })
+        XCTAssertTrue(qs.contains("Viettel Complex, Cách Mạng Tháng Tám"))
+    }
+
+    func testSearchQueriesEdgeCases() {
+        XCTAssertEqual(ShareLink.searchQueries(for: "   "), [])
+        XCTAssertEqual(ShareLink.searchQueries(for: "Chợ Bến Thành"), ["Chợ Bến Thành"])
+        let qs = ShareLink.searchQueries(for: "12 Ngõ 5 Lê Lợi, TP. Hồ Chí Minh")
+        XCTAssertEqual(qs.first, "12 Ngõ 5 Lê Lợi, TP. Hồ Chí Minh")
+        XCTAssertTrue(qs.contains { !$0.lowercased().contains("ngõ") })
+    }
+
+    func testViewportCoordinateSource() throws {
+        let vp = try XCTUnwrap(ShareLink.parse(url: try XCTUnwrap(URL(string: "https://www.google.com/maps/@10.77,106.69,15z")), sharedText: nil))
+        XCTAssertEqual(vp.coordinateSource, .viewport)
+        let pin = try XCTUnwrap(ShareLink.parse(url: try XCTUnwrap(URL(string: "https://www.google.com/maps?q=10.77,106.69")), sharedText: nil))
+        XCTAssertEqual(pin.coordinateSource, .pin)
+    }
 }

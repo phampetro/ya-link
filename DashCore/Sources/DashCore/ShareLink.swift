@@ -15,13 +15,22 @@ public struct GeoPoint: Equatable {
     public var isValid: Bool { lat.isFinite && lon.isFinite && abs(lat) <= 90 && abs(lon) <= 180 }
 }
 
+/// Toạ độ trong link là ghim địa điểm hay chỉ là tâm khung nhìn bản đồ (@lat,lon, có thể lệch vài trăm m).
+public enum CoordinateSource: Equatable {
+    case pin
+    case viewport
+}
+
 /// Điểm đến lấy từ link chia sẻ. Có `point` thì đi thẳng; chỉ có `searchText` thì phải tìm rồi cho người lái xác nhận.
 public struct SharedDestination: Equatable {
     public var name: String?
     public var point: GeoPoint?
     public var stops: [GeoPoint]
     public var searchText: String?
-    public init(name: String? = nil, point: GeoPoint? = nil, stops: [GeoPoint] = [], searchText: String? = nil) {
+    public var coordinateSource: CoordinateSource
+    public init(name: String? = nil, point: GeoPoint? = nil, stops: [GeoPoint] = [], searchText: String? = nil,
+                coordinateSource: CoordinateSource = .pin) {
+        self.coordinateSource = coordinateSource
         self.name = name
         self.point = point
         self.stops = stops
@@ -77,6 +86,64 @@ public enum ShareLink {
               let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let v = c.queryItems?.first(where: { $0.name == "continue" })?.value else { return nil }
         return URL(string: v)
+    }
+
+
+    // MARK: - Truy vấn tìm kiếm từ địa chỉ
+
+    /// Tối đa 4 truy vấn từ địa chỉ dạng chữ, càng về sau càng đơn giản (cụ thể nhất trước):
+    /// nguyên chuỗi; bỏ tiền tố "Tòa nhà" và chữ "Hẻm/Ngõ/Ngách/Kiệt" trước số nhà; bỏ đuôi thành phố/quốc gia;
+    /// tên nơi + tên đường. Không trùng nhau, không rỗng.
+    public static func searchQueries(for text: String) -> [String] {
+        func norm(_ s: String) -> String { s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ") }
+        let full = norm(text)
+        guard !full.isEmpty else { return [] }
+        let fold: (String) -> String = { $0.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+
+        var parts = full.split(separator: ",").map { norm(String($0)) }.filter { !$0.isEmpty }
+        var out = [full]
+        func add(_ parts: [String]) {
+            let q = parts.joined(separator: ", ")
+            if !q.isEmpty, !out.contains(q) { out.append(q) }
+        }
+
+        // 2. Bỏ tiền tố loại công trình ở phần đầu và chữ hẻm/ngõ... đứng trước số.
+        let prefixes = ["tòa nhà", "toà nhà", "chung cư", "căn hộ", "tòa", "toà"]
+        if var first = parts.first {
+            for pre in prefixes {
+                if let r = first.range(of: pre, options: [.caseInsensitive, .diacriticInsensitive, .anchored]),
+                   r.upperBound < first.endIndex, first[r.upperBound].isWhitespace {
+                    let rest = norm(String(first[r.upperBound...]))
+                    if !rest.isEmpty { first = rest }
+                    break
+                }
+            }
+            parts[0] = first
+        }
+        let alley = #"(^|\s)(hẻm|hem|ngõ|ngo|ngách|ngach|kiệt|kiet)\s+(?=\d)"#
+        parts = parts.map { norm($0.replacingOccurrences(of: alley, with: "$1", options: [.regularExpression, .caseInsensitive])) }
+        add(parts)
+
+        // 3. Bỏ đuôi thành phố / quốc gia (giữ phường, quận).
+        let tails: Set<String> = ["ho chi minh", "sai gon", "saigon", "tphcm", "tp hcm", "hcm", "ha noi", "hanoi", "da nang",
+                                  "can tho", "hai phong", "viet nam", "vietnam"].reduce(into: Set<String>()) { $0.insert(fold($1)) }
+        func isTail(_ s: String) -> Bool {
+            var t = fold(s).replacingOccurrences(of: ".", with: " ")
+            t = norm(t)
+            for pre in ["thanh pho ", "tp "] where t.hasPrefix(pre) { t = String(t.dropFirst(pre.count)); break }
+            return tails.contains(t)
+        }
+        var trimmed = parts
+        while trimmed.count > 2, let l = trimmed.last, isTail(l) { trimmed.removeLast() }
+        add(trimmed)
+
+        // 4. Tên nơi + tên đường (bỏ số nhà ở đầu phần thứ hai).
+        if parts.count >= 2 {
+            var street = parts[1].split(separator: " ").map(String.init)
+            while let f = street.first, f.first?.isNumber == true { street.removeFirst() }
+            if !street.isEmpty { add([parts[0], street.joined(separator: " ")]) }
+        }
+        return Array(out.prefix(4))
     }
 
     // MARK: - Phân tích
@@ -156,8 +223,10 @@ public enum ShareLink {
         }
         // 4. Chỉ có khung nhìn @lat,lng. Link /search/<chữ> thì không dùng khung nhìn: phải tìm chữ đó.
         let searchOnlyText = searchSeg != nil && pathPoint == nil
+        var usedViewport = false
         if point == nil, !searchOnlyText, let m = groups(#"@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)"#, in: rawPath).first {
             point = GeoPoint(lat: Double(m[1]) ?? .nan, lon: Double(m[2]) ?? .nan)
+            usedViewport = true
         }
         let text = textKeys.lazy.compactMap { k -> String? in
             guard let v = query[k], latLng(v) == nil else { return nil }
@@ -166,7 +235,7 @@ public enum ShareLink {
         if isApple, placeName == nil, let n = query["name"] { placeName = n }
         if let p = point {
             guard p.isValid else { return nil }
-            return SharedDestination(name: placeName ?? text, point: p)
+            return SharedDestination(name: placeName ?? text, point: p, coordinateSource: usedViewport ? .viewport : .pin)
         }
         // 5. Chữ thay cho toạ độ, hoặc chỉ có tên: phải tìm kiếm.
         if let t = text ?? placeName { return SharedDestination(name: placeName ?? t, searchText: t) }

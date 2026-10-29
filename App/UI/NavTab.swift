@@ -219,6 +219,7 @@ struct NavTab: View {
 struct ConfirmSheet: View {
     @ObservedObject var nav: NavigationController
     @State private var name = ""
+    @State private var seenAlternatives: [NavigationController.Candidate] = []
 
     var body: some View {
         Group {
@@ -229,16 +230,76 @@ struct ConfirmSheet: View {
             }
         }
         .background(Theme.Background())
-        .onChange(of: nav.state) { _ in name = "" }
-        .presentationDetents([.height(nav.pendingSlot == nil ? 470 : 410)])
+        .onChange(of: nav.state) { s in
+            // Đổi lựa chọn trong danh sách thì giữ tên đang gõ; còn lại xoá như cũ.
+            if case .confirm(let p) = s, !p.alternatives.isEmpty, p.alternatives == seenAlternatives { return }
+            name = ""
+            if case .confirm(let p) = s { seenAlternatives = p.alternatives } else { seenAlternatives = [] }
+        }
+        .presentationDetents([.height(sheetHeight)])
         .presentationDragIndicator(.visible)
+    }
+
+    /// Cao hơn khi có danh sách phương án (cuộn được).
+    private var sheetHeight: CGFloat {
+        let base: CGFloat = nav.pendingSlot == nil ? 500 : 440
+        if case .confirm(let p) = nav.state, p.source == .search, p.alternatives.count >= 2 {
+            return base + CGFloat(min(p.alternatives.count, 5)) * 54 + 16
+        }
+        return base
+    }
+
+    private func badge(_ p: NavigationController.Pending) -> some View {
+        let (text, color): (String, Color) = {
+            switch p.source {
+            case .pin: return ("Toạ độ từ ghim địa điểm", Theme.green)
+            case .viewport: return ("Lấy theo khung nhìn, có thể lệch vài trăm m", Theme.orange)
+            case .search: return ("Tìm theo tên, kiểm tra đúng chỗ chưa", Theme.orange)
+            }
+        }()
+        return Text(text)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.16)))
+    }
+
+    private func alternativesList(_ p: NavigationController.Pending) -> some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(Array(p.alternatives.prefix(5).enumerated()), id: \.offset) { i, c in
+                    Button { nav.selectAlternative(i) } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: i == p.selected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(i == p.selected ? Theme.blue : Theme.sec)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(c.name).font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text).lineLimit(1)
+                                Text(c.address).font(.system(size: 12)).foregroundColor(Theme.sec).lineLimit(1)
+                            }
+                            Spacer(minLength: 4)
+                            if let d = c.distanceM {
+                                Text("\(Fmt.dec(d / 1000)) km").font(.system(size: 13)).foregroundColor(Theme.sec)
+                            }
+                        }
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(maxHeight: CGFloat(min(p.alternatives.count, 5)) * 54)
     }
 
     private func content(_ p: NavigationController.Pending) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(nav.pendingSlot == nil ? "Đến đây?" : "Lưu địa điểm này?")
                 .font(.system(size: 22, weight: .bold)).foregroundColor(Theme.text)
-            Text(p.name).font(.system(size: 19)).foregroundColor(Theme.text)
+            badge(p)
+            Text(p.name).font(.system(size: 19)).foregroundColor(Theme.text).lineLimit(2)
+            if p.source == .search, p.alternatives.count >= 2 { alternativesList(p) }
             TextField("Tên gợi nhớ (không bắt buộc)", text: $name)
                 .font(.system(size: 16))
                 .padding(.horizontal, 14)
