@@ -14,6 +14,7 @@ struct SettingsTab: View {
 
     @State private var picked: [PhotosPickerItem] = []
     @State private var saving = false
+    @State private var confirmDefaultPhotos = false
     @State private var keyInput = ""
     @State private var keyMessage: (ok: Bool, text: String)?
     @State private var testingKey = false
@@ -162,6 +163,10 @@ struct SettingsTab: View {
                     .contentShape(Rectangle())
                 }
                 .disabled(saving)
+                if photos.count > 0 {
+                    RowSeparator(inset: 58)
+                    LinkRow(title: "Dùng ảnh nền mặc định", icon: (Sym.photo, .gray)) { confirmDefaultPhotos = true }
+                }
                 RowSeparator()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Đổi ảnh mỗi").font(.system(size: 16)).foregroundColor(Theme.text)
@@ -170,8 +175,17 @@ struct SettingsTab: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
-            GroupFoot((photos.count == 0 ? "Đang dùng 2 ảnh mẫu. " : "")
-                      + "Ảnh nền dùng cho trang chủ và trang Nhạc. Bấm Enter ở trang chủ để đổi ảnh ngay.")
+            GroupFoot((photos.count == 0 ? "Đang dùng 2 ảnh mặc định của app. " : "")
+                      + "Ảnh nền dùng cho trang chủ và trang Nhạc. Bấm ▲ hoặc ▼ một lần ở trang chủ để đổi ảnh ngay.")
+        }
+        .confirmationDialog("Dùng lại 2 ảnh nền mặc định?", isPresented: $confirmDefaultPhotos, titleVisibility: .visible) {
+            Button("Dùng ảnh mặc định", role: .destructive) {
+                photos.resetToDefault()
+                toaster.show("Đã dùng ảnh nền mặc định")
+            }
+            Button("Giữ ảnh của tôi", role: .cancel) {}
+        } message: {
+            Text("Bộ ảnh bạn đã chọn sẽ bị xoá khỏi app.")
         }
     }
 

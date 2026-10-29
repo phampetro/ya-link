@@ -51,6 +51,12 @@ final class PhotoStore: ObservableObject {
         load()
     }
 
+    /// Xoá bộ ảnh đã chọn và dùng lại 2 ảnh nền mặc định của app (biển, đồng cỏ).
+    func resetToDefault() {
+        try? FileManager.default.removeItem(at: dir)
+        load()
+    }
+
     func next(now: TimeInterval) {
         guard images.count > 1 else { return }
         previous = images[index]
