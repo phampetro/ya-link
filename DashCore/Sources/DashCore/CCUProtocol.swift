@@ -191,13 +191,72 @@ public enum CCUCommand {
     /// Giờ (cmd 10): `00 0A <seq>` + 8 byte BE giây epoch địa phương (giây UTC + lệch múi giờ).
     public static func time(seq: UInt8, date: Date, timeZone: TimeZone = .current) -> [UInt8] {
         let local = Int64(date.timeIntervalSince1970.rounded(.down)) + Int64(timeZone.secondsFromGMT(for: date))
-        let u = UInt64(bitPattern: local)
+        return time(seq: seq, epochLocal: local)
+    }
+
+    /// Giờ (cmd 10) từ giây epoch địa phương đã cộng sẵn lệch múi giờ: `00 0A <seq>` + 8 byte BE.
+    public static func time(seq: UInt8, epochLocal: Int64) -> [UInt8] {
+        let u = UInt64(bitPattern: epochLocal)
         var out: [UInt8] = [0x00, 0x0A, seq]
         for shift in stride(from: 56, through: 0, by: -8) {
             out.append(UInt8((u >> UInt64(shift)) & 0xFF))
         }
         return out
     }
+
+    /// Byte phần trăm của trạng thái điện thoại: (0…100 & 0x7F) | 0x80 khi có giá trị; 0x00 khi không biết.
+    public static func percentByte(_ percent: Int?) -> UInt8 {
+        guard let p = percent else { return 0x00 }
+        return UInt8(min(max(p, 0), 100) & 0x7F) | 0x80
+    }
+
+    /// Trạng thái điện thoại (cmd 316): `01 3C <pin> <âm lượng cuộc gọi> <âm lượng media> <cờ>`.
+    /// cờ = 1 | btAudio << 1 | (nhiệt 0–2) << 2 | (vạch sóng 0–5) << 4.
+    public static func phoneStatus(battery: Int?, callVolume: Int?, mediaVolume: Int?, btAudio: Bool,
+                                   thermal: Int, signalBars: Int) -> [UInt8] {
+        let t = min(max(thermal, 0), 2)
+        let s = min(max(signalBars, 0), 5)
+        let bt: Int = btAudio ? 1 : 0
+        let flags = UInt8(1 | (bt << 1) | (t << 2) | (s << 4))
+        return [0x01, 0x3C, percentByte(battery), percentByte(callVolume), percentByte(mediaVolume), flags]
+    }
+
+    /// Chuỗi UTF-8 cắt còn ≤ `maxBytes` byte, cắt ở ranh giới ký tự (không bao giờ chẻ đôi ký tự).
+    public static func utf8Cut(_ s: String, maxBytes: Int = 64) -> [UInt8] {
+        var out: [UInt8] = []
+        for ch in s {
+            let b = Array(String(ch).utf8)
+            if out.count + b.count > maxBytes { break }
+            out += b
+        }
+        return out
+    }
+
+    public static let playPaused: UInt8 = 1
+    public static let playPlaying: UInt8 = 2
+    public static let playStopped: UInt8 = 255
+
+    /// Thông tin bài hát (cmd 278, gửi qua DDT V1): `01 16`, rồi nghệ sĩ, album, tên bài (mỗi chuỗi `[len u8]` + UTF-8, ≤ 64 byte),
+    /// thời lượng (u24 BE, giây), trạng thái phát (1 dừng tạm, 2 đang phát, 255 dừng hẳn), tốc độ ×10 (u16 BE), vị trí (u24 BE, giây).
+    public static func trackInfo(artist: String, album: String, title: String, durationSeconds: Int,
+                                 playState: UInt8, speedTenths: Int = 10, positionSeconds: Int) -> [UInt8] {
+        var out: [UInt8] = [0x01, 0x16]
+        for s in [artist, album, title] {
+            let b = utf8Cut(s)
+            out.append(UInt8(b.count))
+            out += b
+        }
+        let d = min(max(durationSeconds, 0), 0xFF_FFFF)
+        let p = min(max(positionSeconds, 0), 0xFF_FFFF)
+        let v = min(max(speedTenths, 0), 0xFFFF)
+        out += [UInt8((d >> 16) & 0xFF), UInt8((d >> 8) & 0xFF), UInt8(d & 0xFF), playState,
+                UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF),
+                UInt8((p >> 16) & 0xFF), UInt8((p >> 8) & 0xFF), UInt8(p & 0xFF)]
+        return out
+    }
+
+    /// Trạng thái cuộc gọi (cmd 308): `01 34 [1]` đang trong cuộc gọi, `[2]` đã kết thúc.
+    public static func callState(inCall: Bool) -> [UInt8] { [0x01, 0x34, inCall ? 1 : 2] }
 
     public static let languageVietnamese: UInt8 = 15
     public static let languageEnglish: UInt8 = 0
@@ -241,6 +300,12 @@ public enum CCUMessage: Equatable {
     case askTime
     /// 11 `00 0B`: xe hỏi ngôn ngữ.
     case askLanguage
+    /// 279 `01 17 <k>`: phím media, 1 bài sau, 2 bài trước, 3 phát, 4 tạm dừng.
+    case mediaKey(UInt8)
+    /// 281 `01 19 <k>`: phím cuộc gọi, 0 từ chối, 1 trả lời, 2 kết thúc.
+    case callKey(UInt8)
+    /// 285 `01 1D <k>`: âm lượng / tắt tiếng (1/2 media ±, 3/4 cuộc gọi ±, 5 tắt media, 6 tắt mic).
+    case volumeKey(UInt8)
     case other(cmd: UInt16, bytes: [UInt8])
 
     public init?(_ b: [UInt8]) {
@@ -254,6 +319,9 @@ public enum CCUMessage: Equatable {
         case 309: self = .ping
         case 9: self = .askTime
         case 11: self = .askLanguage
+        case 279 where b.count >= 3: self = .mediaKey(b[2])
+        case 281 where b.count >= 3: self = .callKey(b[2])
+        case 285 where b.count >= 3: self = .volumeKey(b[2])
         default: self = .other(cmd: cmd, bytes: b)
         }
     }

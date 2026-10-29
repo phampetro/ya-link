@@ -131,7 +131,7 @@ final class Canvas {
     // MARK: Chữ (CoreText, chữ tiếng Việt có dấu)
 
     enum Weight: CGFloat {
-        case medium = 0.23, semibold = 0.3, bold = 0.4
+        case regular = 0.0, medium = 0.23, semibold = 0.3, bold = 0.4
     }
 
     private static var fontCache: [String: CTFont] = [:]

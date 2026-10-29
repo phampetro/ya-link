@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import UIKit
 
 /// Vị trí GPS, chỉ chạy liên tục khi cần: chỉ đường (kể cả khi khoá máy, cần quyền "Khi dùng app" là đủ),
 /// hoặc đang mở bản đồ trên đồng hồ (chỉ khi app ở trước). Còn lại tắt hẳn, không hiện viên thuốc xanh.
@@ -13,6 +14,7 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
     enum Tracking { case off, foreground, background }
 
     var onUpdate: ((CLLocation) -> Void)?
+    var onLog: ((String) -> Void)?
     private(set) var tracking: Tracking = .off
 
     private let manager = CLLocationManager()
@@ -39,6 +41,9 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
 
     private func begin() {
         guard authorized else { return }
+        // iOS chỉ cho BẮT ĐẦU định vị khi app ở nền nếu có quyền "Luôn luôn". Chỉ "Khi dùng app" thì khi bấm
+        // về nhà / công ty trên đồng hồ lúc điện thoại trong túi sẽ không có vị trí. Xin nâng lên "Luôn luôn".
+        if manager.authorizationStatus == .authorizedWhenInUse { manager.requestAlwaysAuthorization() }
         apply()
         if tracking == .off { manager.requestLocation() }     // một lần: cho thời tiết và tên khu vực
     }
@@ -52,6 +57,9 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
     func setTracking(_ t: Tracking) {
         guard t != tracking else { return }
         tracking = t
+        if t == .background, manager.authorizationStatus == .authorizedWhenInUse, UIApplication.shared.applicationState != .active {
+            onLog?("quyền vị trí chỉ là “Khi dùng app”: iOS không cho bật định vị khi app ở nền. Cần đặt “Luôn luôn”.")
+        }
         apply()
     }
 

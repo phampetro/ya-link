@@ -194,7 +194,7 @@ struct NavTab: View {
         let (text, color, ok): (String, Color, Bool) = {
             switch location.authorization {
             case .authorizedAlways: return ("Luôn luôn", Theme.green, true)
-            case .authorizedWhenInUse: return ("Khi dùng app", Theme.green, true)
+            case .authorizedWhenInUse: return ("Khi dùng app", Theme.orange, false)
             case .denied, .restricted: return ("Đã tắt", Theme.red, false)
             default: return ("Chưa cấp", Theme.sec, false)
             }
@@ -210,7 +210,7 @@ struct NavTab: View {
                 .buttonStyle(.plain)
             }
             GroupFoot(ok ? "Bấm để mở Cài đặt iPhone và đổi quyền vị trí."
-                         : "Cần cho phép vị trí để dẫn đường. Bấm để mở Cài đặt iPhone.")
+                         : "Cần đặt “Luôn luôn” để đồng hồ dùng được vị trí khi điện thoại trong túi (về nhà, công ty, dẫn đường). Bấm để mở Cài đặt iPhone.")
         }
     }
 }

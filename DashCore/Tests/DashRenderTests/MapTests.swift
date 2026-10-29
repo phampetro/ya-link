@@ -34,13 +34,18 @@ final class MapTests: XCTestCase {
         return ui
     }
 
+    /// Tên đường dọc tuyến thử: đi bắc trên "Nguyễn Huệ", rẽ đông sang "Lê Thánh Tôn".
+    static let spans = [StreetSpan(start: 0, end: 2, name: "Nguyễn Huệ"), StreetSpan(start: 2, end: 5, name: "Lê Thánh Tôn")]
+
+    /// `route: []` là không dẫn đường (bản đồ chỉ có xe, nhãn đường quanh xe).
     @discardableResult
     private func render(_ name: String, store: TileStore, zoom: Int, tilt: Bool = true,
-                        maxKB: Double = 25, save: Bool = true) throws -> CGImage {
+                        maxKB: Double = 25, save: Bool = true, route: [MapPoint] = MapTests.route,
+                        spans: [StreetSpan] = []) throws -> CGImage {
         var input = DashRenderer.Input()
         input.date = Date(timeIntervalSince1970: 1_761_640_000)
-        input.map = MapScene(center: Self.center, headingDeg: 0, route: Self.route, passedIndex: 0,
-                             destination: Self.route.last, store: store)
+        input.map = MapScene(center: Self.center, headingDeg: 0, route: route, passedIndex: 0,
+                             destination: route.last, store: store, streetSpans: spans)
         let image = try XCTUnwrap(DashRenderer().render(ui(zoom: zoom, tilt: tilt), now: 10, input: input), name)
         let jpg = ImageEncoder.jpeg(image, quality: 0.5)
         if save {
@@ -71,7 +76,7 @@ final class MapTests: XCTestCase {
     /// Ô giả tại (14, 13048, 7698): đường chính, đường nhỏ, nước, công viên, nhà, và lớp `transportation_name`
     /// (6 đường có tên đi qua vùng nhìn thấy quanh xe). Các ô lân cận để trống (không tải mạng, ảnh không đổi giữa hai lần vẽ).
     /// `withNames: false` bỏ lớp tên đường (để so sánh có/không có nhãn).
-    static func fakeStore(withNames: Bool = true) -> TileStore {
+    static func fakeStore(withNames: Bool = true, cross: Bool = false, only: Set<String>? = nil) -> TileStore {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("fake-tiles-\(UUID().uuidString)")
         let store = TileStore(cacheDirectory: dir, session: URLSession(configuration: .ephemeral))
         func line(_ cls: String, _ pts: [(Int, Int)], name: String? = nil) -> MVTFeature {
@@ -84,7 +89,7 @@ final class MapTests: XCTestCase {
                        geometry: [[MVTPoint(x: x, y: y), MVTPoint(x: x + w, y: y), MVTPoint(x: x + w, y: y + h),
                                    MVTPoint(x: x, y: y + h), MVTPoint(x: x, y: y)]])
         }
-        let named: [MVTFeature] = [
+        var named: [MVTFeature] = [
             line("primary", [(327, 0), (327, 4096)], name: "Nguyễn Huệ"),
             line("primary", [(0, 2457), (4096, 2457)], name: "Lê Lợi"),
             line("secondary", [(0, 1700), (4096, 1900)], name: "Pasteur"),
@@ -92,6 +97,12 @@ final class MapTests: XCTestCase {
             line("tertiary", [(1500, 0), (1500, 4096)], name: "Hai Bà Trưng"),
             line("minor", [(0, 2900), (4096, 2900)], name: "Hẻm 12"),
         ]
+        if cross {
+            // Phố cụt gặp tuyến thử: một bên trái đoạn đi bắc (cách xe 107 m), một phố đi lên bắc từ đoạn đi đông (bên trái)
+            named.append(line("secondary", [(313, 2330), (0, 2330)], name: "Tôn Đản"))
+            named.append(line("secondary", [(500, 2133), (500, 1500)], name: "Mạc Đĩnh Chi"))
+        }
+        if let keep = only { named = named.filter { keep.contains($0.properties["name"]?.stringValue ?? "") } }
         var roads: [MVTFeature] = named
         for k in stride(from: 0, to: 4096, by: 260) {
             roads.append(line("minor", [(k, 0), (k, 4096)]))
@@ -138,25 +149,72 @@ final class MapTests: XCTestCase {
         }
     }
 
-    /// Tên đường phải hiện (khi nghiêng lẫn khi phẳng): cùng cảnh có và không có lớp `transportation_name` phải khác nhau
-    /// ở vùng nhìn thấy, và ảnh có nhãn vẫn nhỏ gọn, mũi tên còn nguyên.
+    /// Tên đường phải hiện khi KHÔNG dẫn đường (route rỗng; khi nghiêng lẫn khi phẳng): cùng cảnh có và không có lớp
+    /// `transportation_name` phải khác nhau ở vùng nhìn thấy, và ảnh có nhãn vẫn nhỏ gọn, mũi tên còn nguyên.
     func testStreetLabelsAppearWhenTilted() throws {
         for zoom in [3, 4, 5] {
-            let withNames = try render("16-map-labels-tilt-z\(zoom)", store: Self.fakeStore(), zoom: zoom)
-            let without = try render("tmp", store: Self.fakeStore(withNames: false), zoom: zoom, save: false)
+            let withNames = try render("16-map-labels-tilt-z\(zoom)", store: Self.fakeStore(), zoom: zoom, route: [])
+            let without = try render("tmp", store: Self.fakeStore(withNames: false), zoom: zoom, save: false, route: [])
             XCTAssertNotEqual(pixels(withNames, x: 50..<430, y: 66..<180), pixels(without, x: 50..<430, y: 66..<180),
                               "zoom \(zoom): nghiêng phải có tên đường")
             let p = pixels(withNames, x: 238..<239, y: 157..<158)
             XCTAssertTrue(p.count == 3 && p.allSatisfy { $0 > 225 }, "mũi tên bị che")
-            let flatNames = try render("tmp", store: Self.fakeStore(), zoom: zoom, tilt: false, save: false)
-            let flatNone = try render("tmp", store: Self.fakeStore(withNames: false), zoom: zoom, tilt: false, save: false)
+            let flatNames = try render("tmp", store: Self.fakeStore(), zoom: zoom, tilt: false, save: false, route: [])
+            let flatNone = try render("tmp", store: Self.fakeStore(withNames: false), zoom: zoom, tilt: false, save: false, route: [])
             XCTAssertNotEqual(pixels(flatNames, x: 50..<430, y: 14..<180), pixels(flatNone, x: 50..<430, y: 14..<180),
                               "zoom \(zoom): bản đồ phẳng phải có tên đường")
         }
-        // Dưới zoom 3 chưa có tên đường
-        let low = try render("tmp", store: Self.fakeStore(), zoom: 2, save: false)
-        let lowNone = try render("tmp", store: Self.fakeStore(withNames: false), zoom: 2, save: false)
+        // Dưới zoom 2 chưa có tên đường
+        let low = try render("tmp", store: Self.fakeStore(), zoom: 1, save: false, route: [])
+        let lowNone = try render("tmp", store: Self.fakeStore(withNames: false), zoom: 1, save: false, route: [])
         XCTAssertEqual(whole(low), whole(lowNone))
+    }
+
+    // MARK: - Dẫn đường: tên đường phía trước
+
+    /// Đang dẫn đường: nhãn "Tên · khoảng cách" hiện ở cả bên trái và bên phải tuyến (so ảnh có/không có tên đường),
+    /// không có chữ nào nằm trên nét tuyến, mũi tên còn nguyên, ảnh vẫn nhỏ gọn.
+    func testAheadLabelsAppearLeftAndRightOfRoute() throws {
+        for zoom in [1, 2, 3] {
+            let withNames = try render("16-map-ahead-tilt-z\(zoom)", store: Self.fakeStore(cross: true), zoom: zoom,
+                                       spans: Self.spans)
+            let without = try render("tmp", store: Self.fakeStore(withNames: false, cross: true), zoom: zoom, save: false,
+                                     spans: Self.spans)
+            // Tuyến đi bắc thẳng đứng ở x = 238 (đoạn dưới góc rẽ); nhãn nằm hai bên, mép nhãn cách nét tuyến >= ~10 px
+            XCTAssertNotEqual(pixels(withNames, x: 20..<220, y: 66..<182), pixels(without, x: 20..<220, y: 66..<182),
+                              "zoom \(zoom): thiếu nhãn bên trái tuyến")
+            XCTAssertNotEqual(pixels(withNames, x: 256..<470, y: 66..<182), pixels(without, x: 256..<470, y: 66..<182),
+                              "zoom \(zoom): thiếu nhãn bên phải tuyến")
+            // Dải giữa nét tuyến (x 236–240), ngay phía trên mũi tên: giống hệt khi có và không có nhãn
+            XCTAssertEqual(pixels(withNames, x: 236..<241, y: 136..<143), pixels(without, x: 236..<241, y: 136..<143),
+                           "zoom \(zoom): có chữ đè lên nét tuyến")
+            let p = pixels(withNames, x: 238..<239, y: 157..<158)
+            XCTAssertTrue(p.count == 3 && p.allSatisfy { $0 > 225 }, "mũi tên bị che")
+            // Phẳng cũng vậy
+            let flat = try render("tmp", store: Self.fakeStore(cross: true), zoom: zoom, tilt: false, save: false, spans: Self.spans)
+            let flatNone = try render("tmp", store: Self.fakeStore(withNames: false, cross: true), zoom: zoom, tilt: false,
+                                      save: false, spans: Self.spans)
+            XCTAssertNotEqual(whole(flat), whole(flatNone), "zoom \(zoom): bản đồ phẳng phải có nhãn đường phía trước")
+            XCTAssertEqual(pixels(flat, x: 236..<241, y: 136..<143), pixels(flatNone, x: 236..<241, y: 136..<143),
+                           "zoom \(zoom): phẳng, có chữ đè lên nét tuyến")
+        }
+    }
+
+    /// Đang dẫn đường thì không còn tên đường quanh xe: với tên đường không cắt tuyến (Pasteur, Hẻm 12) ảnh có và không có
+    /// lớp tên phải giống hệt nhau, ở mọi mức zoom (cả zoom 3–5 là nơi trước đây hiện nhãn quanh xe).
+    func testGenericStreetLabelsGoneWhileNavigating() throws {
+        for zoom in 0...5 {
+            let a = try render("tmp", store: Self.fakeStore(only: ["Pasteur", "Hẻm 12"]), zoom: zoom, save: false,
+                               spans: Self.spans)
+            let b = try render("tmp", store: Self.fakeStore(withNames: false, only: ["Pasteur", "Hẻm 12"]), zoom: zoom,
+                               save: false, spans: Self.spans)
+            XCTAssertEqual(whole(a), whole(b), "zoom \(zoom): còn nhãn đường quanh xe khi dẫn đường")
+        }
+    }
+
+    /// Zoom 0 (xa nhất) được phép bỏ nhãn, nhưng không được lỗi hay phình ảnh.
+    func testAheadLabelsAtWidestZoomStayCompact() throws {
+        try render("16-map-ahead-tilt-z0", store: Self.fakeStore(cross: true), zoom: 0, spans: Self.spans)
     }
 
     /// Phép chiếu phối cảnh và nhãn phải đủ nhanh để gửi liên tục cho đồng hồ.

@@ -14,7 +14,7 @@ struct DashTab: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                DashHeader(link: link, name: settings.userName, goSettings: goSettings)
+                DashHeader(link: link, name: settings.userName, ecu: ccu.ecuId, goSettings: goSettings)
                     .padding(.top, 6)
                     .padding(.bottom, 18)
                 tiles
@@ -112,6 +112,7 @@ struct StatTile: View {
 private struct DashHeader: View {
     @ObservedObject var link: DashLink
     let name: String
+    let ecu: UInt64?
     let goSettings: () -> Void
 
     var body: some View {
@@ -170,7 +171,7 @@ private struct DashHeader: View {
         HStack(spacing: 8) {
             dot
             VStack(alignment: .leading, spacing: 0) {
-                Text(link.accessoryName).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
+                Text(ecu.map { "ECU \($0)" } ?? "Xe của bạn").font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
                 Text(sub).font(.system(size: 11.5, weight: .semibold)).foregroundColor(color).lineLimit(1)
             }
         }

@@ -42,6 +42,7 @@ final class DashLink: NSObject, ObservableObject {
     let settings = AppSettings()
     let location = LocationService()
     let ccu = CCULink()
+    let callMonitor = CallMonitor()
     let history = HistoryStore()
     let toaster = Toaster()
     private(set) var navigation: NavigationController!
@@ -121,9 +122,13 @@ final class DashLink: NSObject, ObservableObject {
         photos.load()
         music.requestAccess()
         location.onUpdate = { [weak self] loc in self?.locationUpdated(loc) }
+        location.onLog = { [weak self] text in self?.add("vị trí: \(text)") }
         location.start()
         ccu.onLog = { [weak self] line in self?.add("CCU: \(line)") }
+        ccu.onMediaKey = { [weak self] key in self?.handleMediaKey(key) }
         ccu.start()
+        callMonitor.onChange = { [weak self] state in self?.callChanged(state) }
+        callMonitor.start()
         // Chỉ để chụp ảnh giao diện trên trình giả lập (CI)
         let env = ProcessInfo.processInfo.environment
         if env["YALINK_NAV"] == "1" { debugShowFakeTurn() }
@@ -173,6 +178,40 @@ final class DashLink: NSObject, ObservableObject {
             }
             dirty = true
         }
+    }
+
+    /// Phím nhạc từ xe (cmd 279): làm xong thì báo lại bài hát cho xe.
+    private func handleMediaKey(_ key: UInt8) {
+        switch key {
+        case 1: music.next()
+        case 2: music.previous()
+        case 3: music.play()
+        case 4: music.pause()
+        default:
+            add("phím nhạc lạ từ xe: \(key)")
+            return
+        }
+        dirty = true
+        Task { [weak self] in
+            // Trình phát cần chút thời gian để đổi bài / trạng thái
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self = self else { return }
+            self.ccu.updateMusic(self.music.info, force: true)
+        }
+    }
+
+    /// Cuộc gọi đổi (CallKit): thanh dưới của đồng hồ đổi chữ (onTick gửi lại khi chữ đổi), và báo cho xe qua Link B.
+    private func callChanged(_ state: DashUI.CallState) {
+        let name: String
+        switch state {
+        case .none: name = "không có cuộc gọi"
+        case .ringing: name = "có cuộc gọi đến"
+        case .active: name = "đang trong cuộc gọi"
+        }
+        add("cuộc gọi: \(name)")
+        ui.callState = state
+        ccu.updateCall(state)
+        dirty = true
     }
 
     private func locationUpdated(_ loc: CLLocation) {
@@ -507,6 +546,7 @@ final class DashLink: NSObject, ObservableObject {
             lastMusicPoll = t
             let m = music.info
             if m != ui.music { ui.music = m; if ui.page == .music { dirty = true } }
+            ccu.updateMusic(m)       // gửi cho xe (278) khi đổi bài hoặc đổi phát / dừng
         }
 
         // Trạng thái dẫn đường báo cho đồng hồ (lệnh 2); không gửi khi danh sách gốc đang mở
@@ -523,7 +563,7 @@ final class DashLink: NSObject, ObservableObject {
         // Chữ thanh dưới: chỉ gửi khi đổi (lệnh 3 nhỏ, không phải gửi lại cả khung)
         var bar = ui.bottomBarText(now: t)
         if let note = noteText {
-            if t < noteUntil { bar = note } else { noteText = nil }
+            if t >= noteUntil { noteText = nil } else if ui.callState == .none { bar = note }   // cuộc gọi luôn ưu tiên hơn ghi chú
         }
         session.bottomBarText = bar
         if barText != bar { barText = bar }

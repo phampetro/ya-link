@@ -11,12 +11,16 @@ import Foundation
 @MainActor
 final class CCULink: NSObject, ObservableObject {
     @Published private(set) var data = CCUVehicleData()
+    /// Mã ECU của xe, lấy từ danh sách ECU xe trả về (không phải giá trị đoán).
+    @Published private(set) var ecuId: UInt64?
     /// Câu tiếng Việt cho người dùng, ví dụ "Dữ liệu xe: đang chờ phản hồi (12 s)". Cập nhật mỗi giây.
     @Published private(set) var status: String = "Dữ liệu xe: đang kết nối…"
     /// Số gói nhận được từ CCU qua BLE (mọi đặc tính), để biết CCU có "nói" hay không.
     @Published private(set) var framesReceived = 0
     /// Mỗi bước đều gọi hàm này (app hiện trong log).
     var onLog: ((String) -> Void)?
+    /// Xe bấm phím nhạc (cmd 279): 1 bài sau, 2 bài trước, 3 phát, 4 tạm dừng. App thực hiện rồi gọi `updateMusic(_:force:)`.
+    var onMediaKey: ((UInt8) -> Void)?
 
     static let pollInterval: TimeInterval = 10
     static let ddtTimeout: TimeInterval = 5
@@ -55,6 +59,15 @@ final class CCULink: NSObject, ObservableObject {
     private var timer: Timer?
     private var started = false
 
+    // Như app chính hãng: trạng thái điện thoại, bài hát, cuộc gọi
+    private var lastPhoneStatus: PhoneStatusSnapshot?
+    private var lastPhoneStatusAt = Date.distantPast
+    private var musicInfo: MusicInfo?
+    private var lastTrackKey: String?
+    private var callState: DashUI.CallState = .none
+    /// Chỉ gửi trạng thái điện thoại nhiều nhất mỗi 2 s.
+    static let phoneStatusMinGap: TimeInterval = 2
+
     // Trạng thái hiển thị
     private var stage = "đang kết nối…"
     private var stageTimed = false
@@ -91,6 +104,7 @@ final class CCULink: NSObject, ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        PhoneStatusProbe.enable()
         log("B: bắt đầu")
         lastMFiRetry = Date()
         openMFi()
@@ -194,7 +208,114 @@ final class CCULink: NSObject, ObservableObject {
             poll()
         }
         diagnose(now)
+        if authed { phoneStatusTick(now) }
         publishStatus()
+    }
+
+    // MARK: - Giống app chính hãng: giờ, ngôn ngữ, trạng thái điện thoại, bài hát, cuộc gọi
+
+    /// Giờ (cmd 10): giây epoch địa phương = giây UTC + lệch múi giờ.
+    private func sendTime(_ why: String) {
+        let date = Date()
+        let offset = TimeZone.current.secondsFromGMT(for: date)
+        let local = Int64(date.timeIntervalSince1970.rounded(.down)) + Int64(offset)
+        log("B: gửi giờ cho xe (\(why)): lệch múi giờ \(offset / 3600) h, giây địa phương \(local)")
+        writeCmd(CCUCommand.time(seq: nextSeq(), epochLocal: local), label: "giờ 10")
+    }
+
+    private func sendLanguage(_ why: String) {
+        log("B: gửi ngôn ngữ tiếng Việt cho xe (\(why))")
+        writeCmd(CCUCommand.language(seq: nextSeq(), lang: CCUCommand.languageVietnamese), label: "ngôn ngữ 12")
+    }
+
+    /// Trạng thái điện thoại (cmd 316). Sóng di động: iOS không có API công khai nên luôn báo 5 vạch (đoán).
+    private func sendPhoneStatus(_ s: PhoneStatusSnapshot, why: String) {
+        lastPhoneStatus = s
+        lastPhoneStatusAt = Date()
+        let bytes = CCUCommand.phoneStatus(battery: s.battery, callVolume: s.callVolume, mediaVolume: s.mediaVolume,
+                                           btAudio: s.btAudio, thermal: s.thermal, signalBars: s.signalBars)
+        log("B: gửi trạng thái điện thoại (\(why)): pin \(s.battery.map { "\($0) %" } ?? "?") · "
+            + "âm lượng media \(s.mediaVolume.map { "\($0) %" } ?? "?") · âm lượng gọi không rõ · "
+            + "Bluetooth \(s.btAudio ? "có" : "không") · nhiệt \(s.thermal) · sóng \(s.signalBars) (giả định)")
+        writeCmd(bytes, label: "trạng thái điện thoại 316")
+    }
+
+    /// Mỗi giây: đọc trạng thái, đổi thì gửi, nhưng cách nhau ít nhất 2 s.
+    private func phoneStatusTick(_ now: Date) {
+        let s = PhoneStatusProbe.read()
+        guard s != lastPhoneStatus, now.timeIntervalSince(lastPhoneStatusAt) >= Self.phoneStatusMinGap else { return }
+        sendPhoneStatus(s, why: "có thay đổi")
+    }
+
+    private static func trackKey(_ m: MusicInfo?) -> String {
+        guard let m = m else { return "none" }
+        return "\(m.artist)|\(m.album)|\(m.title)|\(m.playing)|\(Int(m.duration))"
+    }
+
+    /// App đưa bài đang phát vào (mỗi giây). Gửi cmd 278 khi đổi bài hoặc đổi phát / dừng (hoặc `force`).
+    func updateMusic(_ info: MusicInfo?, force: Bool = false) {
+        musicInfo = info
+        guard authed else { return }
+        if !force, Self.trackKey(info) == lastTrackKey { return }
+        sendTrackInfo()
+    }
+
+    private func sendTrackInfo() {
+        let m = musicInfo
+        lastTrackKey = Self.trackKey(m)
+        let state: UInt8 = m == nil ? CCUCommand.playStopped : (m!.playing ? CCUCommand.playPlaying : CCUCommand.playPaused)
+        let packet = CCUCommand.trackInfo(artist: m?.artist ?? "", album: m?.album ?? "", title: m?.title ?? "",
+                                          durationSeconds: Int(m?.duration ?? 0), playState: state, speedTenths: 10,
+                                          positionSeconds: Int(m?.position ?? 0))
+        if let m = m {
+            log("B: gửi bài hát cho xe (278): \(m.title) · \(m.artist) · \(m.playing ? "đang phát" : "tạm dừng")")
+        } else {
+            log("B: gửi bài hát cho xe (278): không có bài, trạng thái dừng")
+        }
+        enqueueDDT(packet, label: "278 bài hát")
+    }
+
+    /// App đưa trạng thái cuộc gọi vào. Gửi cmd 308: 1 khi đang nói, 2 khi kết thúc; đổ chuông chỉ ghi log
+    /// (tài liệu không có mã cho "đang đổ chuông").
+    func updateCall(_ state: DashUI.CallState) {
+        let previous = callState
+        guard state != previous else { return }
+        callState = state
+        guard authed else { return }
+        sendCallState(state, previous: previous)
+    }
+
+    private func sendCallState(_ state: DashUI.CallState, previous: DashUI.CallState) {
+        switch state {
+        case .ringing:
+            log("B: có cuộc gọi đến, chưa gửi cho xe (tài liệu không có mã đổ chuông)")
+        case .active:
+            log("B: đang trong cuộc gọi, gửi cho xe (308 = 1)")
+            writeCmd(CCUCommand.callState(inCall: true), label: "cuộc gọi 308 = 1")
+        case .none:
+            if previous == .none { return }
+            log("B: cuộc gọi đã kết thúc, gửi cho xe (308 = 2)")
+            writeCmd(CCUCommand.callState(inCall: false), label: "cuộc gọi 308 = 2")
+        }
+    }
+
+    /// Ngay sau khi xác thực được chấp nhận: giờ, ngôn ngữ, trạng thái điện thoại, bài hát, cuộc gọi (nếu đang nói).
+    private func sendAfterAuth() {
+        sendTime("sau xác thực")
+        sendLanguage("sau xác thực")
+        sendPhoneStatus(PhoneStatusProbe.read(), why: "sau xác thực")
+        sendTrackInfo()
+        if callState == .active { sendCallState(.active, previous: .none) }
+    }
+
+    private func mediaKeyName(_ k: UInt8) -> String {
+        switch k {
+        case 1: return "bài sau"
+        case 2: return "bài trước"
+        case 3: return "phát"
+        case 4: return "tạm dừng"
+        default: return "mã \(k)"
+        }
     }
 
     /// Ghi vào log vì sao chưa có dữ liệu (một lần ở mốc 15, 30, 60 s sau khi xác thực).
@@ -378,6 +499,8 @@ final class CCULink: NSObject, ObservableObject {
         sendQueue = []
         v1rx = DDTV1Receiver()
         v2rx = DDTV2Receiver()
+        lastPhoneStatus = nil
+        lastTrackKey = nil
     }
 
     fileprivate func handleState(_ state: CBManagerState) {
@@ -668,6 +791,7 @@ final class CCULink: NSObject, ObservableObject {
                 probing = false
                 setStatus("đang chờ phản hồi", timed: true, frames: true)
                 poll()
+                sendAfterAuth()
             } else {
                 setStatus("CCU từ chối mã xác thực, đang hỏi lại mã")
                 authSent = false
@@ -684,13 +808,22 @@ final class CCULink: NSObject, ObservableObject {
             log("B: bộ đếm xăng \(counter) → \(String(format: "%.3f", used)) L")
             data.fuelUsedL = used
         case .askTime:
-            log("B: xe hỏi giờ")
-            writeCmd(CCUCommand.time(seq: nextSeq(), date: Date()), label: "giờ")
+            log("B: xe hỏi giờ (cmd 9)")
+            sendTime("xe hỏi")
         case .askLanguage:
-            log("B: xe hỏi ngôn ngữ")
-            writeCmd(CCUCommand.language(seq: nextSeq(), lang: CCUCommand.languageVietnamese), label: "ngôn ngữ")
-        case .other:
-            break
+            log("B: xe hỏi ngôn ngữ (cmd 11)")
+            sendLanguage("xe hỏi")
+        case .mediaKey(let k):
+            log("B: xe bấm phím nhạc (cmd 279): \(mediaKeyName(k))")
+            onMediaKey?(k)
+        case .callKey(let k):
+            let name = k == 0 ? "từ chối" : (k == 1 ? "trả lời" : (k == 2 ? "kết thúc" : "mã \(k)"))
+            log("B: xe bấm nút cuộc gọi (cmd 281): \(name), iOS không cho app trả lời/từ chối")
+        case .volumeKey(let k):
+            log("B: xe bấm phím âm lượng (cmd 285): mã \(k), gửi lại trạng thái điện thoại")
+            sendPhoneStatus(PhoneStatusProbe.read(), why: "xe bấm âm lượng")
+        case .other(let cmd, let raw):
+            log("B: lệnh lạ từ xe: cmd \(cmd) [\(hx(raw))]")
         }
     }
 
@@ -704,6 +837,7 @@ final class CCULink: NSObject, ObservableObject {
             if !ids.isEmpty {
                 let first = ecuIds.isEmpty
                 ecuIds = ids
+                ecuId = ids.first
                 if first, let ecu = ids.first, authed || probing {
                     enqueueDDT(CCUCommand.vehicleDataRequest(ecu: ecu), label: "270 ECU \(ecu)")
                 }

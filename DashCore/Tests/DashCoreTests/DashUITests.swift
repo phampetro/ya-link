@@ -3,6 +3,30 @@ import XCTest
 
 /// Luật nút bấm (chỉ UP / DOWN / Home, cửa sổ bấm 1/2/3 lần 0,4 s), menu bản đồ và chữ thanh dưới, đúng như mockup đã chốt.
 final class DashUITests: XCTestCase {
+    // MARK: - Cuộc gọi
+
+    func testCallBarHasHighestPriorityOnEveryPage() {
+        let ui = DashUI()
+        ui.showWelcome(now: 0)
+        ui.callState = .ringing
+        XCTAssertEqual(ui.bottomBarText(now: 0.5), "Chúc thượng lộ bình an", "màn chào vẫn trên cuộc gọi")
+        ui.homeBarText = "ODO 100"
+        XCTAssertEqual(ui.bottomBarText(now: 10), "Có cuộc gọi đến")
+        ui.callState = .active
+        XCTAssertEqual(ui.bottomBarText(now: 10), "Đang trong cuộc gọi")
+        ui.callState = .ringing
+        _ = ui.press(.home, now: 20)
+        _ = ui.press(.home, now: 20.2)                                // đúp Home: xoay sang trang kế
+        _ = ui.tick(now: 23)
+        XCTAssertEqual(ui.bottomBarText(now: 24), "Có cuộc gọi đến", "trang khác vẫn báo cuộc gọi")
+        ui.nav = NavInfo(maneuver: .right, distanceToTurnM: 50, nextStreet: "Lê Lợi", currentStreet: "Nguyễn Huệ",
+                         destination: "Chợ", remainingKm: 1, eta: Date(), speedLimit: nil)
+        XCTAssertEqual(ui.bottomBarText(now: 50), "Có cuộc gọi đến", "trên cả nhắc rẽ")
+        ui.callState = .none
+        XCTAssertNotEqual(ui.bottomBarText(now: 50), "Có cuộc gọi đến")
+        XCTAssertNotEqual(ui.bottomBarText(now: 50), "Đang trong cuộc gọi")
+    }
+
     // MARK: - Trang Home
 
     func testHomeSinglePressChangesPhoto() {
@@ -162,7 +186,7 @@ final class DashUITests: XCTestCase {
         XCTAssertEqual(ui.bottomBarText(now: 5), "Chia sẻ vị trí từ Google Maps")
         XCTAssertEqual(press(ui, .up, at: 6), [])
         XCTAssertEqual(ui.zoom, DashUI.defaultZoom + 1, "UP đơn phóng to")
-        XCTAssertEqual(ui.bottomBarText(now: 7), "Thu phóng · 250 m")
+        XCTAssertEqual(ui.bottomBarText(now: 7), "Thu phóng · 400 m")
         XCTAssertEqual(ui.bottomBarText(now: 9), "Chia sẻ vị trí từ Google Maps")
         _ = press(ui, .down, at: 10)
         _ = press(ui, .down, at: 11)

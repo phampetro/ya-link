@@ -224,7 +224,7 @@ final class NavigationController: ObservableObject {
             guard awaitingFix == p else { return }
             awaitingFix = nil
             if navigator == nil { destination = nil }
-            state = .failed("Chưa có vị trí GPS. Cho phép vị trí “Khi dùng app” rồi thử lại.")
+            state = .failed("Chưa có vị trí GPS. Đặt quyền vị trí “Luôn luôn” trong Cài đặt iPhone rồi thử lại.")
         }
     }
 
@@ -328,6 +328,7 @@ final class NavigationController: ObservableObject {
         let pts = route?.points.map { MapPoint(lat: $0.lat, lon: $0.lon) } ?? []
         tiles.prefetch(around: center, z: 14, radius: 1)
         return MapScene(center: center, headingDeg: lastHeading, route: pts, passedIndex: lastPassed,
-                        destination: destination.map { MapPoint(lat: $0.point.lat, lon: $0.point.lon) }, store: tiles)
+                        destination: destination.map { MapPoint(lat: $0.point.lat, lon: $0.point.lon) }, store: tiles,
+                        streetSpans: route?.streetSpans ?? [])
     }
 }

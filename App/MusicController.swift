@@ -17,9 +17,11 @@ final class MusicController {
         let pos = player.currentPlaybackTime
         return MusicInfo(title: item.title ?? "Không rõ tên bài", artist: item.artist ?? "",
                          duration: item.playbackDuration, position: pos.isFinite ? pos : 0,
-                         playing: player.playbackState == .playing)
+                         playing: player.playbackState == .playing, album: item.albumTitle ?? "")
     }
 
+    func play() { player.play() }
+    func pause() { player.pause() }
     func next() { player.skipToNextItem() }
     func previous() { player.skipToPreviousItem() }
     func togglePlay() {

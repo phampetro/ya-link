@@ -1,4 +1,5 @@
 import CoreGraphics
+import DashCore
 import Foundation
 
 /// Cảnh bản đồ cần vẽ: vị trí xe, hướng đi (heading-up: hướng đi luôn ở phía trên), tuyến, điểm đến.
@@ -9,15 +10,18 @@ public struct MapScene {
     public var passedIndex: Int
     public var destination: MapPoint?
     public var store: TileStore
+    /// Tên đường dọc tuyến (Route.streetSpans, chỉ số theo `route`); rỗng thì không có nhãn "đi thẳng".
+    public var streetSpans: [StreetSpan]
 
     public init(center: MapPoint, headingDeg: Double, route: [MapPoint], passedIndex: Int,
-                destination: MapPoint?, store: TileStore) {
+                destination: MapPoint?, store: TileStore, streetSpans: [StreetSpan] = []) {
         self.center = center
         self.headingDeg = headingDeg
         self.route = route
         self.passedIndex = passedIndex
         self.destination = destination
         self.store = store
+        self.streetSpans = streetSpans
     }
 }
 
@@ -222,6 +226,7 @@ enum MapRenderer {
 
     static func draw(_ c: Canvas, scene: MapScene, zoomIndex zi: Int, pc: RGB, tilt: Bool = false) {
         let v = makeView(scene, zoomIndex: zi, tilt: tilt)
+        let navigating = scene.route.count >= 2
         let ct = Mercator.tile(scene.center, z: v.z)
         let reach = tilt ? 700.0 : 300.0
         let n = min(2, max(1, Int(ceil(reach / v.k / 256))))
@@ -359,7 +364,12 @@ enum MapRenderer {
                 c.text(name.uppercased(), x: p.x, y: r.minY + 1, size: 17, weight: .bold, color: RGB(154, 159, 154).cg(), align: .center)
             }
         }
-        if zi >= 3 {
+        if navigating && zi >= 1 {
+            // Đang dẫn đường: chỉ tên đường phía trước (không có tên đường quanh xe, không có tên đường đang đi)
+            let labels = aheadLabels(scene: scene, v: v, zi: zi, tiles: tiles)
+            drawAheadLabels(c, labels: labels, scene: scene, v: v, tilt: tilt, routeWidth: wRoute, place: place)
+        }
+        if !navigating && zi >= 2 {
             // Mỗi đường có tên: lấy mẫu các đỉnh của mọi đoạn, giữ đỉnh nằm trong vùng nhìn thấy và cách mũi tên đủ xa,
             // chọn đỉnh gần mũi tên (nghiêng) hoặc gần tâm màn hình (phẳng) nhất.
             let winMinX = 50.0, winMaxX = 430.0
@@ -462,6 +472,261 @@ enum MapRenderer {
         c.fill(me, RGB.white.cg())
         c.stroke(me, RGB(10, 12, 10).cg(), width: 3)
         c.fill(me, RGB.white.cg())
+    }
+
+    // MARK: - Nhãn tên đường phía trước (khi đang dẫn đường)
+
+    private struct AheadKey: Equatable {
+        var count: Int
+        var first: MapPoint
+        var last: MapPoint
+        var passed: Int
+        var carLat: Int
+        var carLon: Int
+        var z: Int
+        var zoomIndex: Int
+        var tiles: Int
+        var named: Int
+        var spans: Int
+    }
+
+    private static let aheadLock = NSLock()
+    private static var aheadKey: AheadKey?
+    private static var aheadCache: [AheadLabel] = []
+
+    /// Nhãn đường phía trước, lưu theo (tuyến, đoạn đã đi, vị trí xe làm tròn ~10 m, zoom, ô đã tải)
+    /// nên khung hình liên tiếp không tính lại (khung ~4–5 lần mỗi giây).
+    static func aheadLabels(scene: MapScene, v: View, zi: Int,
+                            tiles: [(tx: Int, ty: Int, tile: MVTTile)]) -> [AheadLabel] {
+        let route = scene.route
+        guard route.count >= 2 else { return [] }
+        var named = 0
+        for t in tiles { named += t.tile.layers["transportation_name"]?.features.count ?? 0 }
+        let key = AheadKey(count: route.count, first: route[0], last: route[route.count - 1], passed: scene.passedIndex,
+                           carLat: Int((scene.center.lat * 1e4).rounded()), carLon: Int((scene.center.lon * 1e4).rounded()),
+                           z: v.z, zoomIndex: zi, tiles: tiles.count, named: named, spans: scene.streetSpans.count)
+        aheadLock.lock()
+        if aheadKey == key {
+            let hit = aheadCache
+            aheadLock.unlock()
+            return hit
+        }
+        aheadLock.unlock()
+
+        let geo = route.map { GeoPoint(lat: $0.lat, lon: $0.lon) }
+        let car = GeoPoint(lat: scene.center.lat, lon: scene.center.lon)
+        let look = max(450, min(1500, metersPerPixel[max(0, min(metersPerPixel.count - 1, zi))] * 240))
+        let window = AheadStreets.routeWindow(route: geo, passedIndex: scene.passedIndex, car: car, lookAheadM: look)
+
+        // Hộp bao của đoạn tuyến phía trước (toạ độ thế giới ở mức v.z) để bỏ nhanh các đường ở xa
+        var minX = Double.infinity, maxX = -Double.infinity, minY = Double.infinity, maxY = -Double.infinity
+        for p in window {
+            let w = Mercator.worldPixel(MapPoint(lat: p.lat, lon: p.lon), zoom: Double(v.z))
+            minX = min(minX, w.x); maxX = max(maxX, w.x)
+            minY = min(minY, w.y); maxY = max(maxY, w.y)
+        }
+        let margin = 300 / Mercator.metersPerPixel(lat: scene.center.lat, zoom: Double(v.z))
+        minX -= margin; maxX += margin; minY -= margin; maxY += margin
+
+        var roads: [AheadRoad] = []
+        for t in tiles {
+            guard let layer = t.tile.layers["transportation_name"] else { continue }
+            let e = Double(layer.extent)
+            for f in layer.features {
+                guard f.kind == .line, let name = f.properties["name"]?.stringValue, !name.isEmpty,
+                      let tier = roadTier(f.properties["class"]?.stringValue), tier <= AheadStreets.maxTier else { continue }
+                for part in f.geometry where part.count >= 2 {
+                    let world: [(x: Double, y: Double)] = part.map {
+                        (x: (Double(t.tx) + Double($0.x) / e) * 256, y: (Double(t.ty) + Double($0.y) / e) * 256)
+                    }
+                    var pMinX = Double.infinity, pMaxX = -Double.infinity, pMinY = Double.infinity, pMaxY = -Double.infinity
+                    for w in world {
+                        pMinX = min(pMinX, w.x); pMaxX = max(pMaxX, w.x)
+                        pMinY = min(pMinY, w.y); pMaxY = max(pMaxY, w.y)
+                    }
+                    if pMaxX < minX || pMinX > maxX || pMaxY < minY || pMinY > maxY { continue }
+                    let pts: [GeoPoint] = world.map { w in
+                        let m = Mercator.point(worldX: w.x, worldY: w.y, zoom: Double(v.z))
+                        return GeoPoint(lat: m.lat, lon: m.lon)
+                    }
+                    roads.append(AheadRoad(name: name, points: pts, tier: tier))
+                }
+            }
+        }
+        let labels = AheadStreets.compute(route: geo, passedIndex: scene.passedIndex, car: car,
+                                          streetSpans: scene.streetSpans, roads: roads, lookAheadM: look)
+        aheadLock.lock()
+        aheadKey = key
+        aheadCache = labels
+        aheadLock.unlock()
+        return labels
+    }
+
+    /// Đoạn thẳng a–b có cắt hình chữ nhật không (Liang–Barsky).
+    static func segmentHitsRect(_ a: CGPoint, _ b: CGPoint, _ r: CGRect) -> Bool {
+        var t0 = 0.0, t1 = 1.0
+        let dx = Double(b.x - a.x), dy = Double(b.y - a.y)
+        let p = [-dx, dx, -dy, dy]
+        let q = [Double(a.x - r.minX), Double(r.maxX - a.x), Double(a.y - r.minY), Double(r.maxY - a.y)]
+        for i in 0..<4 {
+            if p[i] == 0 {
+                if q[i] < 0 { return false }
+            } else {
+                let t = q[i] / p[i]
+                if p[i] < 0 {
+                    if t > t1 { return false }
+                    if t > t0 { t0 = t }
+                } else {
+                    if t < t0 { return false }
+                    if t < t1 { t1 = t }
+                }
+            }
+        }
+        return true
+    }
+
+    /// Vẽ nhãn "Tên đường · khoảng cách": nhãn trái nằm bên trái tuyến (căn phải, cách mép tuyến ~10 px), nhãn phải bên phải,
+    /// nhãn đi thẳng ở cuối đoạn tuyến nhìn thấy (lệch ~12 px sang phải). Không bao giờ nằm trên nét tuyến;
+    /// nhãn đè lên nhau, lên mũi tên, ô thông tin hay thanh dưới thì bỏ.
+    static func drawAheadLabels(_ c: Canvas, labels: [AheadLabel], scene: MapScene, v: View, tilt: Bool,
+                                routeWidth: CGFloat, place: (CGRect) -> Bool) {
+        guard !labels.isEmpty, scene.route.count >= 2 else { return }
+        let winTop: CGFloat = tilt ? 72 : 30
+        func inside(_ p: CGPoint) -> Bool { p.x >= 12 && p.x <= 468 && p.y >= winTop && p.y <= 178 }
+        func halfRoute(_ d: Double) -> CGFloat {
+            tilt ? max(1.5, routeWidth * CGFloat(v.scale(d)) / 2) : routeWidth / 2
+        }
+
+        // Nét tuyến trên màn hình từ xe tới mép nhìn thấy xa nhất
+        let idx = max(0, min(scene.route.count - 2, scene.passedIndex))
+        var line: [CGPoint] = [v.project(GP(u: 0, d: 0))]
+        var prevG = GP(u: 0, d: 0)
+        var endG = GP(u: 0, d: 0)
+        var i = idx + 1
+        while i < scene.route.count && line.count < 600 {
+            let g = v.ground(scene.route[i])
+            let s = v.project(g)
+            if inside(s) {
+                line.append(s)
+                prevG = g
+                endG = g
+            } else {
+                var lo = 0.0, hi = 1.0
+                for _ in 0..<12 {
+                    let mid = (lo + hi) / 2
+                    let gm = GP(u: prevG.u + (g.u - prevG.u) * mid, d: prevG.d + (g.d - prevG.d) * mid)
+                    if inside(v.project(gm)) { lo = mid } else { hi = mid }
+                }
+                endG = GP(u: prevG.u + (g.u - prevG.u) * lo, d: prevG.d + (g.d - prevG.d) * lo)
+                line.append(v.project(endG))
+                break
+            }
+            i += 1
+        }
+        func hitsRoute(_ r: CGRect) -> Bool {
+            let rr = r.insetBy(dx: -2, dy: -2)
+            for k in 1..<line.count where segmentHitsRect(line[k - 1], line[k], rr) { return true }
+            return false
+        }
+
+        func layout(_ l: AheadLabel) -> (name: String, dist: String, w: CGFloat) {
+            let dist = " · " + l.distanceText
+            let distW = c.measure(dist, size: 16, weight: .regular)
+            let room = 190 - 14 - distW
+            var name = l.name
+            if c.measure(name, size: 16, weight: .semibold) > room {
+                var chars = Array(name)
+                name = "…"
+                while chars.count > 1 {
+                    chars.removeLast()
+                    let t = String(chars).trimmingCharacters(in: .whitespaces) + "…"
+                    if c.measure(t, size: 16, weight: .semibold) <= room {
+                        name = t
+                        break
+                    }
+                }
+            }
+            return (name, dist, c.measure(name, size: 16, weight: .semibold) + distW + 14)
+        }
+        func paint(_ r: CGRect, _ l: (name: String, dist: String, w: CGFloat)) {
+            c.fill(r, RGB.black.cg(0.75), radius: 7)
+            let nw = c.text(l.name, x: r.minX + 7, y: r.minY + 1.6, size: 16, weight: .semibold, color: RGB(216, 216, 216).cg())
+            c.text(l.dist, x: r.minX + 7 + nw, y: r.minY + 1.6, size: 16, weight: .regular, color: RGB(176, 176, 176).cg())
+        }
+
+        _ = place(CGRect(x: 226, y: 144, width: 24, height: 32))      // giữ chỗ cho mũi tên xe
+
+        // Đi thẳng: ngay sau mép xa nhìn thấy của tuyến, lệch sang phải
+        if let sl = labels.first(where: { $0.side == .straight }), line.count >= 2 {
+            let l = layout(sl)
+            let e = line[line.count - 1]
+            let hr = halfRoute(endG.d)
+            var cands: [CGRect] = []
+            for off in [8.0, 30.0, 52.0] {
+                cands.append(CGRect(x: e.x + 12 + hr, y: e.y + CGFloat(off) - 11, width: l.w, height: 22))
+            }
+            // Không còn chỗ bên phải (tuyến đi ngang ra mép màn hình): đặt vuông góc với hướng tuyến, phải rồi trái
+            let a = line[line.count - 2]
+            var dx = Double(e.x - a.x), dy = Double(e.y - a.y)
+            let dn = hypot(dx, dy)
+            if dn > 0.01 {
+                dx /= dn
+                dy /= dn
+            } else {
+                dx = 0
+                dy = -1
+            }
+            for sign in [1.0, -1.0] {
+                let nx = CGFloat(-dy * sign), ny = CGFloat(dx * sign)
+                let off = abs(nx) * l.w / 2 + abs(ny) * 11 + hr + 10
+                let cx = min(max(e.x + nx * off, 6 + l.w / 2), 474 - l.w / 2)
+                cands.append(CGRect(x: cx - l.w / 2, y: e.y + ny * off - 11, width: l.w, height: 22))
+            }
+            for r in cands where !hitsRoute(r) {
+                if place(r) {
+                    paint(r, l)
+                    break
+                }
+            }
+        }
+
+        // Đường cắt: gần nhất trước
+        for lab in labels where lab.side != .straight {
+            let g = v.ground(MapPoint(lat: lab.anchor.lat, lon: lab.anchor.lon))
+            if g.d < 4 { continue }
+            let s = v.project(g)
+            guard inside(s) else { continue }
+            // Hướng tuyến tại giao lộ (tính trên mặt đất rồi chiếu, nên đúng cả khi nghiêng)
+            let ri = max(0, min(scene.route.count - 2, lab.routeIndex))
+            let ga = v.ground(scene.route[ri]), gb = v.ground(scene.route[ri + 1])
+            var du = gb.u - ga.u, dd = gb.d - ga.d
+            let dl = hypot(du, dd)
+            if dl > 1e-6 {
+                du /= dl
+                dd /= dl
+            } else {
+                du = 0
+                dd = 1
+            }
+            let p1 = v.project(GP(u: g.u + du * 20, d: g.d + dd * 20))
+            var sx = Double(p1.x - s.x), sy = Double(p1.y - s.y)
+            let sn = hypot(sx, sy)
+            if sn > 1e-6 {
+                sx /= sn
+                sy /= sn
+            } else {
+                sx = 0
+                sy = -1
+            }
+            // Pháp tuyến trên màn hình: trái = (sy, -sx), phải = (-sy, sx)
+            let isLeft = lab.side == .left
+            let nx = CGFloat(isLeft ? sy : -sy), ny = CGFloat(isLeft ? -sx : sx)
+            let l = layout(lab)
+            let off = abs(nx) * l.w / 2 + abs(ny) * 11 + halfRoute(g.d) + 10
+            let r = CGRect(x: s.x + nx * off - l.w / 2, y: s.y + ny * off - 11, width: l.w, height: 22)
+            if hitsRoute(r) || !place(r) { continue }
+            paint(r, l)
+        }
     }
 
     static func roadTier(_ cls: String?) -> Int? {

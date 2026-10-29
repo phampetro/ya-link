@@ -33,7 +33,8 @@ public final class DashUI {
     public static let welcomeDuration: TimeInterval = 2.0
     public static let zoomScales: [Double] = [0.22, 0.4, 0.6, 0.85, 1.3, 2.0]
     public static let zoomLabels = ["2 km", "1 km", "600 m", "400 m", "250 m", "150 m"]
-    public static let defaultZoom = 3
+    /// Mức thu phóng mặc định (600 m): thu nhỏ một mức so với trước (400 m) để thấy đủ tên đường phía trước khi chỉ đường.
+    public static let defaultZoom = 2
 
     // Dữ liệu app đưa vào
     public var nav: NavInfo?
@@ -52,6 +53,9 @@ public final class DashUI {
     public var edgeGlow = true
     /// Bản đồ nghiêng 3D (phối cảnh nhìn về phía trước). Tắt: bản đồ phẳng như cũ.
     public var mapTilt = true
+    /// Cuộc gọi trên iPhone (CallKit): thanh dưới báo ở mọi trang, ưu tiên cao nhất (trừ lúc màn chào).
+    public enum CallState: Equatable { case none, ringing, active }
+    public var callState: CallState = .none
 
     // Trạng thái
     public private(set) var rotation = 1          // bước bánh xe, không chia dư (để xoay vòng mượt)
@@ -399,6 +403,11 @@ public final class DashUI {
 
     public func bottomBarText(now: TimeInterval) -> String {
         if inWelcome(now) { return "Chúc thượng lộ bình an" }
+        switch callState {
+        case .ringing: return "Có cuộc gọi đến"
+        case .active: return "Đang trong cuộc gọi"
+        case .none: break
+        }
         if showingArrival(now) { return "Đã tới \(arrivedDestination)" }
         if let n = nav, n.distanceToTurnM < 100, !mapOpen { return n.maneuver.prompt(n.nextStreet) }
         switch page {
@@ -549,7 +558,11 @@ public struct MusicInfo: Equatable {
     public var duration: TimeInterval
     public var position: TimeInterval
     public var playing: Bool
-    public init(title: String, artist: String, duration: TimeInterval, position: TimeInterval, playing: Bool) {
+    /// Tên album (gửi cho xe qua Link B; trang nhạc trên đồng hồ không dùng).
+    public var album: String
+    public init(title: String, artist: String, duration: TimeInterval, position: TimeInterval, playing: Bool,
+                album: String = "") {
+        self.album = album
         self.title = title
         self.artist = artist
         self.duration = duration

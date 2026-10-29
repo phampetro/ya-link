@@ -84,6 +84,75 @@ final class CCUProtocolTests: XCTestCase {
                        [0x00, 0x0A, 0x05, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x65, 0x74])
     }
 
+    func testTimeFromLocalEpoch() {
+        // UTC 2026-10-29 10:00:00 = 1793268000 = 0x6AE31920; +7 h (25200 s) = 0x6AE37B90
+        XCTAssertEqual(CCUCommand.time(seq: 9, epochLocal: 1_793_268_000 + 7 * 3600),
+                       [0x00, 0x0A, 0x09, 0x00, 0x00, 0x00, 0x00, 0x6A, 0xE3, 0x7B, 0x90])
+        let date = Date(timeIntervalSince1970: 1_793_268_000)
+        let vn = TimeZone(secondsFromGMT: 7 * 3600)!
+        XCTAssertEqual(CCUCommand.time(seq: 9, date: date, timeZone: vn),
+                       CCUCommand.time(seq: 9, epochLocal: 1_793_268_000 + 7 * 3600))
+    }
+
+    func testPercentByteAndPhoneStatus() {
+        XCTAssertEqual(CCUCommand.percentByte(nil), 0x00)
+        XCTAssertEqual(CCUCommand.percentByte(0), 0x80)
+        XCTAssertEqual(CCUCommand.percentByte(80), 0xD0)
+        XCTAssertEqual(CCUCommand.percentByte(100), 0xE4)
+        XCTAssertEqual(CCUCommand.percentByte(150), 0xE4)
+        XCTAssertEqual(CCUCommand.percentByte(-5), 0x80)
+        // pin 80 %, âm lượng cuộc gọi chưa biết, media 50 %, có BT, nhiệt 1, 5 vạch: 1 | 2 | 4 | 0x50 = 0x57
+        XCTAssertEqual(CCUCommand.phoneStatus(battery: 80, callVolume: nil, mediaVolume: 50, btAudio: true,
+                                              thermal: 1, signalBars: 5),
+                       [0x01, 0x3C, 0xD0, 0x00, 0xB2, 0x57])
+        // không BT, nhiệt 0, 0 vạch: chỉ bit 0
+        XCTAssertEqual(CCUCommand.phoneStatus(battery: 100, callVolume: 20, mediaVolume: 0, btAudio: false,
+                                              thermal: 0, signalBars: 0),
+                       [0x01, 0x3C, 0xE4, 0x94, 0x80, 0x01])
+        // ngoài khoảng bị kẹp: nhiệt 7 → 2, vạch 9 → 5: 1 | 8 | 0x50 = 0x59
+        XCTAssertEqual(CCUCommand.phoneStatus(battery: 1, callVolume: nil, mediaVolume: nil, btAudio: false,
+                                              thermal: 7, signalBars: 9).last, 0x59)
+    }
+
+    func testTrackInfoBytes() {
+        let b = CCUCommand.trackInfo(artist: "Ab", album: "", title: "Hé", durationSeconds: 200,
+                                     playState: CCUCommand.playPlaying, speedTenths: 10, positionSeconds: 65)
+        XCTAssertEqual(b, [0x01, 0x16,
+                           0x02, 0x41, 0x62,
+                           0x00,
+                           0x03, 0x48, 0xC3, 0xA9,
+                           0x00, 0x00, 0xC8,
+                           0x02,
+                           0x00, 0x0A,
+                           0x00, 0x00, 0x41])
+    }
+
+    func testTrackInfoCutsOnCharacterBoundary() {
+        let long = "a" + String(repeating: "é", count: 40)          // 1 + 80 byte
+        let cut = CCUCommand.utf8Cut(long)
+        XCTAssertEqual(cut.count, 63, "32 ký tự é không vừa 64 byte: bỏ cả ký tự, không chẻ đôi")
+        XCTAssertEqual(Array(cut.suffix(2)), [0xC3, 0xA9])
+        XCTAssertNotNil(String(bytes: cut, encoding: .utf8))
+        let b = CCUCommand.trackInfo(artist: long, album: "", title: "", durationSeconds: 0,
+                                     playState: CCUCommand.playStopped, positionSeconds: 0)
+        XCTAssertEqual(b[2], 63)
+        XCTAssertEqual(b.count, 2 + 1 + 63 + 1 + 1 + 3 + 1 + 2 + 3)
+        XCTAssertEqual(b[b.count - 9 ..< b.count - 5], [0x00, 0x00, 0x00, 0xFF])
+    }
+
+    func testCallStateBytes() {
+        XCTAssertEqual(CCUCommand.callState(inCall: true), [0x01, 0x34, 0x01])
+        XCTAssertEqual(CCUCommand.callState(inCall: false), [0x01, 0x34, 0x02])
+    }
+
+    func testMediaAndCallKeysParse() {
+        XCTAssertEqual(CCUMessage([0x01, 0x17, 0x01]), .mediaKey(1))
+        XCTAssertEqual(CCUMessage([0x01, 0x17, 0x04]), .mediaKey(4))
+        XCTAssertEqual(CCUMessage([0x01, 0x19, 0x02]), .callKey(2))
+        XCTAssertEqual(CCUMessage([0x01, 0x1D, 0x05]), .volumeKey(5))
+        XCTAssertEqual(CCUMessage([0x01, 0x17]), .other(cmd: 279, bytes: [0x01, 0x17]))
+    }
+
     func testAuthenticationV2Layout() {
         let auth = CCUCommand.authenticationV2(code: code, passkey: passkey)
         XCTAssertEqual(auth.count, 22)
