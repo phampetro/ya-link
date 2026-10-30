@@ -260,7 +260,7 @@ public struct DashRenderer {
         let m = ui.music
         c.text(m?.title ?? "Chưa phát nhạc", x: 214, y: Self.lineY(22, 28, 22), size: 22, weight: .semibold,
                color: RGB.white.cg(), maxWidth: 196)
-        c.text(m?.artist ?? "Mở Apple Music trên iPhone", x: 214, y: Self.lineY(50, 22, 17), size: 17, weight: .medium,
+        c.text(m?.artist ?? "Phát nhạc trên iPhone", x: 214, y: Self.lineY(50, 22, 17), size: 17, weight: .medium,
                color: Self.mutedText.cg(), maxWidth: 196)
 
         // Nút phát/tạm dừng lớn, nháy khi bấm
