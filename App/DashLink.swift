@@ -120,6 +120,7 @@ final class DashLink: NSObject, ObservableObject {
         pushProfile()
         ui.homeBarText = settings.odometer.barText(odoKm: nil)
         photos.load()
+        music.onLog = { [weak self] text in self?.add(text) }
         music.requestAccess()
         location.onUpdate = { [weak self] loc in self?.locationUpdated(loc) }
         location.onLog = { [weak self] text in self?.add("vị trí: \(text)") }
@@ -200,6 +201,8 @@ final class DashLink: NSObject, ObservableObject {
             // Trình phát cần chút thời gian để đổi bài / trạng thái
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard let self = self else { return }
+            self.music.refresh()
+            try? await Task.sleep(nanoseconds: 300_000_000)
             self.ccu.updateMusic(self.music.info, force: true)
         }
     }
@@ -548,6 +551,7 @@ final class DashLink: NSObject, ObservableObject {
         syncVehicle()
         if t - lastMusicPoll > 1 {
             lastMusicPoll = t
+            music.refresh()
             let m = music.info
             if m != ui.music { ui.music = m; if ui.page == .music { dirty = true } }
             ccu.updateMusic(m)       // gửi cho xe (278) khi đổi bài hoặc đổi phát / dừng
