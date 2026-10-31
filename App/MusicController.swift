@@ -61,12 +61,13 @@ final class MusicController {
 
     /// Trạng thái phát / dừng của app đang phát (đọc riêng, không cần tên bài).
     private var remotePlaying: Bool?
+    private var toggledAt = Date.distantPast
 
     /// Dùng cho màn Nhạc của app: khi chưa đọc được tên bài nhưng biết có app đang phát thì hiện "Đang phát qua điện thoại".
     /// Không gửi cho xe (xe tự nhận tên bài qua Bluetooth).
     var displayInfo: MusicInfo? {
         if let m = cached { return m }
-        guard let playing = remotePlaying, remoteApp != "?", remoteApp != "không có" else { return nil }
+        guard let playing = remotePlaying else { return nil }
         return MusicInfo(title: playing ? "Đang phát qua điện thoại" : "Tạm dừng", artist: "", duration: 0, position: 0, playing: playing)
     }
 
@@ -93,7 +94,11 @@ final class MusicController {
         getPlaying?(DispatchQueue.main) { [weak self] playing in
             Task { @MainActor in
                 guard let self = self else { return }
-                self.remotePlaying = playing
+                // Vừa bấm phát/dừng thì giữ trạng thái đã đổi vài giây, chờ iOS cập nhật kịp
+                if Date().timeIntervalSince(self.toggledAt) > 3, self.remotePlaying != playing {
+                    self.remotePlaying = playing
+                    self.onLog?("nhạc: trạng thái phát từ iOS: \(playing ? "đang phát" : "dừng")")
+                }
                 guard var m = self.cached else { return }
                 m.playing = playing
                 self.cached = m
@@ -150,8 +155,8 @@ final class MusicController {
         fallback()
     }
 
-    func play() { send(.play) { player.play() } }
-    func pause() { send(.pause) { player.pause() } }
+    func play() { send(.play) { player.play() }; remotePlaying = true; toggledAt = Date() }
+    func pause() { send(.pause) { player.pause() }; remotePlaying = false; toggledAt = Date() }
     func next() { send(.next) { player.skipToNextItem() } }
     func previous() { send(.previous) { player.skipToPreviousItem() } }
     /// Bật/tắt phát bằng lệnh của iOS, không phụ thuộc việc đọc được trạng thái hay không (app khác thường bị chặn đọc).
@@ -159,6 +164,7 @@ final class MusicController {
         let wasPlaying = remotePlaying ?? cached?.playing ?? false
         send(.toggle) { wasPlaying ? player.pause() : player.play() }
         remotePlaying = !wasPlaying              // đổi biểu tượng ngay, lần đọc sau sẽ chỉnh lại nếu sai
+        toggledAt = Date()
     }
 
     // MARK: - Âm lượng
