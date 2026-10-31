@@ -128,6 +128,11 @@ final class DashLink: NSObject, ObservableObject {
         location.start()
         ccu.onLog = { [weak self] line in self?.add("CCU: \(line)") }
         ccu.onMediaKey = { [weak self] key in self?.handleMediaKey(key) }
+        ccu.onVolumeKey = { [weak self] key in
+            guard let self = self else { return }
+            if key == 1 { self.music.adjustVolume(by: 6) }          // xe là điều khiển âm lượng của chính điện thoại
+            else if key == 2 { self.music.adjustVolume(by: -6) }
+        }
         ccu.lastFix = { [weak self] in
             guard let self = self, let c = self.location.location?.coordinate else { return nil }
             return (c.latitude, c.longitude, self.location.placeName)
@@ -179,7 +184,7 @@ final class DashLink: NSObject, ObservableObject {
             case .nextTrack: music.next()
             case .previousTrack: music.previous()
             case .togglePlay: music.togglePlay()
-            case .volume: break        // iOS không cho app tự chỉnh âm lượng hệ thống; chỉ hiện trên đồng hồ
+            case .volume(let delta): music.adjustVolume(by: delta)
             case .nextPhoto: photos.next(now: now)
             }
             dirty = true
@@ -553,6 +558,9 @@ final class DashLink: NSObject, ObservableObject {
         if t - lastMusicPoll > 1 {
             lastMusicPoll = t
             music.refresh()
+            // Thanh âm lượng trên đồng hồ phản chiếu âm lượng thật của điện thoại
+            let phoneVolume = music.systemVolume
+            if phoneVolume != ui.volume { ui.volume = phoneVolume; if ui.page == .music { dirty = true } }
             let m = music.info
             if m != ui.music { ui.music = m; if ui.page == .music { dirty = true } }
             ccu.updateMusic(m)       // gửi cho xe (278) khi đổi bài hoặc đổi phát / dừng

@@ -22,6 +22,8 @@ final class CCULink: NSObject, ObservableObject {
     var onLog: ((String) -> Void)?
     /// Xe bấm phím nhạc (cmd 279): 1 bài sau, 2 bài trước, 3 phát, 4 tạm dừng. App thực hiện rồi gọi `updateMusic(_:force:)`.
     var onMediaKey: ((UInt8) -> Void)?
+    /// Xe bấm phím âm lượng (cmd 285): 1/2 media +/−, 3/4 cuộc gọi +/−, 5 tắt tiếng media, 6 tắt mic.
+    var onVolumeKey: ((UInt8) -> Void)?
 
     static let pollInterval: TimeInterval = 10
     static let ddtTimeout: TimeInterval = 5
@@ -267,8 +269,13 @@ final class CCULink: NSObject, ObservableObject {
         musicInfo = info
         guard authed else { return }
         if !force, Self.trackKey(info) == lastTrackKey { return }
+        // Không có bài (thường do iOS chặn đọc app khác): không gửi "không có bài" để xe tự dùng thông tin bài hát từ Bluetooth.
+        if info == nil, !sentTrack { lastTrackKey = Self.trackKey(nil); return }
+        sentTrack = info != nil
         sendTrackInfo()
     }
+
+    private var sentTrack = false
 
     private func sendTrackInfo() {
         let m = musicInfo
@@ -847,6 +854,7 @@ final class CCULink: NSObject, ObservableObject {
             log("B: xe bấm nút cuộc gọi (cmd 281): \(name), iOS không cho app trả lời/từ chối")
         case .volumeKey(let k):
             log("B: xe bấm phím âm lượng (cmd 285): mã \(k), gửi lại trạng thái điện thoại")
+            onVolumeKey?(k)
             sendPhoneStatus(PhoneStatusProbe.read(), why: "xe bấm âm lượng")
         case .askWeather(let lat, let lon, let valid):
             handleWeatherRequest(latitude: lat, longitude: lon, valid: valid, raw: bytes)
