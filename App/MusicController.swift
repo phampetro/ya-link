@@ -94,13 +94,16 @@ final class MusicController {
         getPlaying?(DispatchQueue.main) { [weak self] playing in
             Task { @MainActor in
                 guard let self = self else { return }
+                // MediaRemote có thể luôn báo "dừng" khi bị chặn, nên cộng thêm cờ công khai "app khác đang phát âm thanh"
+                let other = AVAudioSession.sharedInstance().isOtherAudioPlaying
+                let isPlaying = playing || other
                 // Vừa bấm phát/dừng thì giữ trạng thái đã đổi vài giây, chờ iOS cập nhật kịp
-                if Date().timeIntervalSince(self.toggledAt) > 3, self.remotePlaying != playing {
-                    self.remotePlaying = playing
-                    self.onLog?("nhạc: trạng thái phát từ iOS: \(playing ? "đang phát" : "dừng")")
+                if Date().timeIntervalSince(self.toggledAt) > 3, self.remotePlaying != isPlaying {
+                    self.remotePlaying = isPlaying
+                    self.onLog?("nhạc: trạng thái phát: MediaRemote \(playing ? "phát" : "dừng"), âm thanh app khác \(other ? "đang phát" : "không")")
                 }
                 guard var m = self.cached else { return }
-                m.playing = playing
+                m.playing = isPlaying
                 self.cached = m
             }
         }
