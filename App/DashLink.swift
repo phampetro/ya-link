@@ -559,11 +559,13 @@ final class DashLink: NSObject, ObservableObject {
             lastMusicPoll = t
             music.refresh()
             // Thanh âm lượng trên đồng hồ phản chiếu âm lượng thật của điện thoại
-            let phoneVolume = music.systemVolume
-            if phoneVolume != ui.volume { ui.volume = phoneVolume; if ui.page == .music { dirty = true } }
-            let m = music.info
+            if let phoneVolume = music.systemVolume, phoneVolume != ui.volume {
+                ui.volume = phoneVolume
+                if ui.page == .music { dirty = true }
+            }
+            let m = music.displayInfo
             if m != ui.music { ui.music = m; if ui.page == .music { dirty = true } }
-            ccu.updateMusic(m)       // gửi cho xe (278) khi đổi bài hoặc đổi phát / dừng
+            ccu.updateMusic(music.info)       // gửi cho xe (278) khi đổi bài hoặc đổi phát / dừng
         }
 
         // Trạng thái dẫn đường báo cho đồng hồ (lệnh 2); không gửi khi danh sách gốc đang mở

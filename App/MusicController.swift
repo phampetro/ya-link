@@ -59,6 +59,17 @@ final class MusicController {
     /// Bài đang phát (lần đọc gần nhất, cập nhật mỗi lần gọi `refresh()`).
     var info: MusicInfo? { cached }
 
+    /// Trạng thái phát / dừng của app đang phát (đọc riêng, không cần tên bài).
+    private var remotePlaying: Bool?
+
+    /// Dùng cho màn Nhạc của app: khi chưa đọc được tên bài nhưng biết có app đang phát thì hiện "Đang phát qua điện thoại".
+    /// Không gửi cho xe (xe tự nhận tên bài qua Bluetooth).
+    var displayInfo: MusicInfo? {
+        if let m = cached { return m }
+        guard let playing = remotePlaying, remoteApp != "?", remoteApp != "không có" else { return nil }
+        return MusicInfo(title: playing ? "Đang phát qua điện thoại" : "Tạm dừng", artist: "", duration: 0, position: 0, playing: playing)
+    }
+
     /// Đọc lại bài đang phát (không chặn); kết quả nằm ở `info` cho lần gọi sau.
     func refresh() {
         guard let getInfo = getInfo else { cached = appleMusicInfo(); return }
@@ -81,7 +92,9 @@ final class MusicController {
         }
         getPlaying?(DispatchQueue.main) { [weak self] playing in
             Task { @MainActor in
-                guard let self = self, var m = self.cached else { return }
+                guard let self = self else { return }
+                self.remotePlaying = playing
+                guard var m = self.cached else { return }
                 m.playing = playing
                 self.cached = m
             }
@@ -143,37 +156,47 @@ final class MusicController {
     func previous() { send(.previous) { player.skipToPreviousItem() } }
     /// Bật/tắt phát bằng lệnh của iOS, không phụ thuộc việc đọc được trạng thái hay không (app khác thường bị chặn đọc).
     func togglePlay() {
-        send(.toggle) { cached?.playing == true ? player.pause() : player.play() }
+        let wasPlaying = remotePlaying ?? cached?.playing ?? false
+        send(.toggle) { wasPlaying ? player.pause() : player.play() }
+        remotePlaying = !wasPlaying              // đổi biểu tượng ngay, lần đọc sau sẽ chỉnh lại nếu sai
     }
 
     // MARK: - Âm lượng
 
     private var volumeView: MPVolumeView?
 
-    /// Âm lượng hiện tại của điện thoại, 0…100.
-    var systemVolume: Int { Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()) }
-
-    /// Chỉnh âm lượng hệ thống (delta theo thang 0…100) bằng thanh âm lượng ẩn của iOS.
-    /// Thường chỉ chạy khi app đang mở; khoá máy hoặc ở nền có thể không có tác dụng, kết quả ghi vào nhật ký.
-    func adjustVolume(by delta: Int) {
-        let view: MPVolumeView
-        if let v = volumeView {
-            view = v
-        } else {
-            view = MPVolumeView(frame: CGRect(x: -400, y: -400, width: 200, height: 40))
+    /// Thanh âm lượng ẩn của iOS: giá trị của nó luôn là âm lượng thật của điện thoại
+    /// (`AVAudioSession.outputVolume` báo 0 khi phiên âm thanh chưa kích hoạt nên không dùng làm gốc).
+    private var volumeSlider: UISlider? {
+        if volumeView == nil {
+            let view = MPVolumeView(frame: CGRect(x: -400, y: -400, width: 200, height: 40))
             view.alpha = 0.01
             let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first }.first
-            window?.addSubview(view)
+            guard let w = window else { return nil }
+            w.addSubview(view)
             volumeView = view
         }
-        guard let slider = view.subviews.compactMap({ $0 as? UISlider }).first else {
+        return volumeView?.subviews.compactMap { $0 as? UISlider }.first
+    }
+
+    /// Âm lượng hiện tại của điện thoại, 0…100 (nil nếu chưa đọc được).
+    var systemVolume: Int? { volumeSlider.map { Int(($0.value * 100).rounded()) } }
+
+    /// Chỉnh âm lượng hệ thống (delta theo thang 0…100) từ giá trị thật của thanh âm lượng ẩn.
+    /// Thường chỉ chạy khi app đang mở; khoá máy hoặc ở nền có thể không có tác dụng.
+    func adjustVolume(by delta: Int) {
+        guard let slider = volumeSlider else {
             onLog?("nhạc: không tìm thấy thanh âm lượng")
             return
         }
-        let before = AVAudioSession.sharedInstance().outputVolume
+        let before = slider.value
         let target = min(1, max(0, before + Float(delta) / 100))
         slider.value = target
-        slider.sendActions(for: .valueChanged)
         onLog?("nhạc: âm lượng \(Int(before * 100)) → \(Int(target * 100)) %")
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self = self, let v = self.volumeSlider?.value else { return }
+            self.onLog?("nhạc: âm lượng thật sau 0,5 s: \(Int(v * 100)) %")
+        }
     }
 }
