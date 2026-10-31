@@ -28,9 +28,9 @@ enum PhoneStatusProbe {
         let battery: Int? = level >= 0 ? Int((level * 100).rounded()) : nil
         let session = AVAudioSession.sharedInstance()
         let vol = Int((session.outputVolume * 100).rounded())
-        let bt = session.currentRoute.outputs.contains { out in
-            out.portType == .bluetoothA2DP || out.portType == .bluetoothHFP || out.portType == .bluetoothLE
-        }
+        // Chỉ được gọi khi đã xác thực với CCU, tức điện thoại đang nối Bluetooth với xe: luôn báo "có"
+        // (đọc đường ra âm thanh sẽ báo "không" khi chưa phát nhạc qua xe, xe có thể ẩn thông báo vì vậy).
+        let bt = true
         let thermal: Int
         switch ProcessInfo.processInfo.thermalState {
         case .nominal: thermal = 0

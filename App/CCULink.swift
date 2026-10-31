@@ -573,8 +573,10 @@ final class CCULink: NSObject, ObservableObject {
 
     fileprivate func handleDisconnected(_ p: CBPeripheral, error: String) {
         guard p === peripheral else { return }
+        let wasAuthed = authed
         resetLink()
         gotConnected = false
+        if wasAuthed, data.ignitionOn != false { Alerts.connectionLost() }
         setStatus(data.ignitionOn == false ? "xe đã tắt khoá điện, chờ xe bật lại" : "mất kết nối CCU, đang nối lại")
         log("B: BLE ngắt \(error)")
         // Passkey có thể đổi sau mỗi lần xe tắt mở: hỏi lại qua MFi

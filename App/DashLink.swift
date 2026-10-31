@@ -122,6 +122,7 @@ final class DashLink: NSObject, ObservableObject {
         photos.load()
         music.onLog = { [weak self] text in self?.add(text) }
         music.requestAccess()
+        Alerts.requestPermission()
         location.onUpdate = { [weak self] loc in self?.locationUpdated(loc) }
         location.onLog = { [weak self] text in self?.add("vị trí: \(text)") }
         location.start()
